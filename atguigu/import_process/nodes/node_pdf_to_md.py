@@ -1,9 +1,8 @@
 # atguigu/import_process/nodes/node_pdf_to_md.py
 import time
+# 预加载（提前导入后续用到的模块）
 from pathlib import Path
-from unittest import result
-
-from atguigu.config import MineruToken
+from atguigu.config.config import MineruToken
 from atguigu.import_process.base import NodeBase
 from atguigu.import_process.state import ImportGraphState
 from atguigu.tool.json_format_tool import json_format_tool
@@ -50,7 +49,7 @@ class NodePDFToMD(NodeBase):
         }
         data = {
             "files": [
-                {"name": "f{pdf_path_obj.name}", "data_id": "abcd"}
+                {"name": f"{pdf_path_obj.name}", "data_id": "abcd"}
             ],
             "model_version": "vlm"
         }
@@ -58,6 +57,9 @@ class NodePDFToMD(NodeBase):
         # 遇到发送请求，要进行三层判断
         # 1.请求是否成功
         response = requests.post(url, headers=header, json=data)
+        #数据请求错误查看是什么原因
+        response_text = response.text
+        logger.info(f"API 响应原始内容: {response_text}")
         if response.status_code != 200:
             logger.error("上传pdf失败")
             raise Exception(f"上传pdf文件请求失败:{pdf_path}")
@@ -68,6 +70,7 @@ class NodePDFToMD(NodeBase):
             logger.error("上传pdf文件请求数据失败")
             raise Exception("上传pdf文件请求数据失败")
         logger.info("上传pdf文件请求数据成功")
+
         batch_id = result["data"]["batch_id"]
         urls = result["data"]["file_urls"]
         for i in range(0, len(urls)):
@@ -92,13 +95,14 @@ class NodePDFToMD(NodeBase):
         }
         #发请求，三层判断轮询
         #1.请求是否成功
+        total_time = 300
+        use_time = 0
         while True:
-            total_time = 300
-            use_time = 0
+            start_time = time.time()
             try:
-                start_time = time.time()
+
                 res = requests.get(url, headers=header)
-                if res.get(url).status_code != 200:
+                if res.status_code != 200:
                     logger.error("获取pdf文件处理结果请求失败")
                     raise Exception("获取pdf文件处理结果请求失败")
                 result = res.json()
@@ -106,7 +110,7 @@ class NodePDFToMD(NodeBase):
                     logger.error("获取pdf文件处理结果请求数据失败")
                     raise Exception("获取pdf文件处理结果请求数据失败")
                 data = result["data"]['extract_result'][0]
-                if data["type"] != "done":
+                if data["state"] != "done":
                     logger.info("pdf文件处理中")
                     raise Exception("pdf文件处理中")
                 zip_url = data["full_zip_url"]
@@ -140,6 +144,7 @@ class NodePDFToMD(NodeBase):
         unzip_file_path_obj = local_dir_obj/f"{pdf_path_obj.stem}"
         #判断解压的目录是否存在，如果存在先删除后创建
         if unzip_file_path_obj.exists():
+            #幂等性删除，递归删除 相同的删除请求，无论执行 1 次、10 次、N 次，系统最终状态完全一致，不会产生额外脏数据、重复业务逻辑、异常报错，
             shutil.rmtree(unzip_file_path_obj)
         unzip_file_path_obj.mkdir(parents=True,exist_ok=True)
         #把解压的内容，放到这个目录
@@ -147,7 +152,7 @@ class NodePDFToMD(NodeBase):
         #解压完成后重命名full.md文件改名未我们原来pdf文件名的前缀.md
         origin_md_path_oobj = unzip_file_path_obj/"full.md"
         #with_name只是在内存中修改了
-        new_md_path_obj = unzip_file_path_obj.with_name(f"{pdf_path_obj.stem}.md")
+        new_md_path_obj = origin_md_path_oobj.with_name(f"{pdf_path_obj.stem}.md")
         #在磁盘中修改
         origin_md_path_oobj.rename(new_md_path_obj)
 
@@ -159,7 +164,7 @@ class NodePDFToMD(NodeBase):
 
     def process(self, state: ImportGraphState):
 
-        # 先对路径及文件进行校验
+        # 先对路径及文件进行校验 #元组解包
         pdf_path,pdf_path_obj,local_dir_obj = self.check_path(state)
         # 上传pdf文件到mineru
         batch_id = self.upload_pdf(pdf_path,pdf_path_obj)
@@ -169,7 +174,7 @@ class NodePDFToMD(NodeBase):
         md_content,new_md_path_obj = self.download_pdf(md_zip_url,local_dir_obj,pdf_path_obj)
 
         return {
-            "md_path":new_md_path_obj,
+            "md_path":str(new_md_path_obj),
             "md_content":md_content,
         }
 

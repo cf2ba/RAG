@@ -1,4 +1,5 @@
 import json
+import os
 
 from minio import Minio
 
@@ -7,7 +8,7 @@ from atguigu.tool.logger import logger
 
 minio_client = None
 
-def minio_client_init():
+def get_minio_client():
     global minio_client
     if not minio_client:
         try:
@@ -15,11 +16,14 @@ def minio_client_init():
                 endpoint=MinIoConfig.minio_endpoint,
                 access_key=MinIoConfig.minio_access_key,
                 secret_key=MinIoConfig.minio_secret_key,
+                secure=False
             )
+
             bucket_name = MinIoConfig.minio_bucket_name
             # 创建桶
             if not minio_client.bucket_exists(bucket_name=bucket_name):
                 minio_client.make_bucket(bucket_name=bucket_name)
+
             # 设置权限 读公开 写认证
             policy = {
                 "Version": "2012-10-17",
@@ -28,20 +32,18 @@ def minio_client_init():
                         "Effect": "Allow",
                         "Principal": {"AWS": "*"},
                         "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
-                        "Resource": "arn:aws:s3:::my-bucket",
+                        "Resource": f"arn:aws:s3:::{bucket_name}",
                     },
                     {
                         "Effect": "Allow",
                         "Principal": {"AWS": "*"},
                         "Action": "s3:GetObject",
-                        "Resource": "arn:aws:s3:::my-bucket/*",
+                        "Resource": f"arn:aws:s3:::{bucket_name}/*",
                     },
                 ],
             }
-            minio_client.set_bucket_policy(bucket_name=MinIoConfig.minio_bucket_name, policy=json.dumps(policy))
+            minio_client.set_bucket_policy(bucket_name=bucket_name, policy=json.dumps(policy))
         except Exception as e:
             logger.error("minio客户端初始化失败")
             raise e
     return minio_client
-if __name__ == "__main__":
-    print(minio_client_init())

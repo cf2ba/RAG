@@ -6,13 +6,15 @@ from collections import deque
 from pathlib import Path
 
 from langchain.chat_models import init_chat_model
+from minio.deleteobjects import DeleteObject
 from openai import base_url
 
-from atguigu.config.config import LLMConfig
+from atguigu.config.config import LLMConfig, MinIoConfig
 from atguigu.import_process.base import NodeBase
 from atguigu.import_process.state import ImportGraphState
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
+from atguigu.tool.minio_client_tool import  get_minio_client
 
 
 class NodeMdImage(NodeBase):
@@ -171,7 +173,53 @@ class NodeMdImage(NodeBase):
                 "summary": result.content
             })
 
-        return json_format_tool(image_with_summary_list)
+        return image_with_summary_list
+    def get_image_with_summary_and_url_list(self,image_with_summary_list):
+        upload_dir = MinIoConfig.minio_img_dir  # 上传到哪个目录
+        minio_client = get_minio_client()
+        # 幂等性删除这个目录中的图片
+        # 1.拿到桶当中这个目录当中的所有老图片（prefix = upload_dir 代表桶下面的目录，不到文件）
+        old_image_list = minio_client.list_objects(bucket_name=MinIoConfig.minio_bucket_name, prefix=upload_dir)
+        # for item in old_image_list:
+        #     print(item)
+        # print(old_image_list)
+        # 2.调用api 批量删除老的图片，delete_object_list这个参数要求必须是DeleteObject对象列表
+        # 我们就把上面的图片转化为这个图片列表
+        delete_image_list = [DeleteObject(obj) for obj in old_image_list]
+        minio_client.remove_objects(
+            bucket_name=MinIoConfig.minio_bucket_name,
+            delete_object_list=delete_image_list
+        )
+        # 准备上传图片
+        image_with_summary_and_url_list = []
+        for image_with_summary in image_with_summary_list:
+            minio_client.fput_object(
+                bucket_name=MinIoConfig.minio_bucket_name,
+                # 除了桶之外的路径一直到图片  拼接路径 字符串
+                object_name=upload_dir + "/" + image_with_summary.get("image_name"),
+                file_path=image_with_summary.get('image_path'),
+            )
+            url = f"http://{MinIoConfig.minio_endpoint}/{MinIoConfig.minio_bucket_name}/{upload_dir}/{image_with_summary.get("image_name")}"
+            print(url)
+            image_with_summary_and_url_list.append({
+                **image_with_summary,
+                "url": url
+            })
+        return image_with_summary_and_url_list
+
+    def replace_md_image(self,image_with_summary_and_url_list,md_path_obj,md_content):
+        for image_with_summary_and_url in image_with_summary_and_url_list:
+            pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_with_summary_and_url.get("image_name")) + r"\)")
+            # 当碰到特殊字符\s时必须使用lambda 来进行替换 ，lambad可以规避特殊字符，特殊字符也可以替换成功
+            md_content = pattern.sub(
+                f"![{image_with_summary_and_url.get("summary")}]({image_with_summary_and_url.get('url')})",
+                md_content)
+
+            # 备份替换摘要和url后的md_content 中去
+        new_md_path_obj = md_path_obj.parent / str(md_path_obj.stem + "_new.md")
+        with open(new_md_path_obj, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        return new_md_path_obj,md_content
 
     def process(self, state: ImportGraphState):
         """
@@ -209,7 +257,12 @@ class NodeMdImage(NodeBase):
         # 第三大步:根据第二步得到的上下文图片列表，进行大模型调用真正生成摘要，形成新的图片字典列表
         image_with_summary_list = self.get_image_with_summary_list(image_with_context_list)
 
-        return image_with_summary_list
+        #第四大步:上传图片到minio，自己构造图片的线上url ,最后将url放到字典列表中
+        image_with_summary_and_url_list = self.get_image_with_summary_and_url_list(image_with_summary_list)
+        #第五大步:替换md当中的图片
+        new_md_path,md_content  = self.replace_md_image(image_with_summary_and_url_list,md_path_obj,md_content)
+        return new_md_path,md_content
+
 
 
 if __name__ == '__main__':

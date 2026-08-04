@@ -24,3 +24,15 @@ class LLMConfig:
     vl_model = os.getenv('VL_MODEL')
     # 商品名识别模型
     item_model = os.getenv('ITEM_MODEL')
+
+class MinIoConfig:
+    # MinIO 服务端点
+    minio_endpoint = os.getenv('MINIO_ENDPOINT')
+    # 访问密钥
+    minio_access_key = os.getenv('MINIO_ACCESS_KEY')
+    # 私有密钥
+    minio_secret_key = os.getenv('MINIO_SECRET_KEY')
+    # 存储桶名称
+    minio_bucket_name = os.getenv('MINIO_BUCKET_NAME')
+    # 图片上传目录
+    minio_img_dir = os.getenv('MINIO_IMG_DIR')

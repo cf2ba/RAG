@@ -15,6 +15,7 @@ from atguigu.tool.logger import logger
 
 class  MainGraphRun:
     def __init__(self):
+        #构造构造器
         self.builder = StateGraph(state_schema =ImportGraphState )
         self.add_node()
         self.add_edge()

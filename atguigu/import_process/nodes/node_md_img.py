@@ -145,6 +145,8 @@ class NodeMdImage(NodeBase):
             with open(image_with_context.get("image_path"), "rb") as f:
                 image_data = f.read()
                 base64_str = base64.b64encode(image_data).decode("utf-8")
+                #小图片才可以使用，模型要求的是图片转为base64格式
+                #base64是一种将二进制数据转为纯文本字符的编码方式，让数据再文本协议中安全传输
 
             # 给大模型发请求
             # 构造提示词：参考阿里云百炼提供的提示词
@@ -235,10 +237,17 @@ class NodeMdImage(NodeBase):
             # 正则匹配Markdown图片语法 ![任意文本](任意路径/图片文件名)，对文件名做转义规避特殊字符匹配失效
             pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_with_summary_and_url.get("image_name")) + r"\)")
             # 全局替换旧图片标签为「![图片描述](线上图片URL)」标准MD图片格式
+            # md_content = pattern.sub(
+            #     f"![{image_with_summary_and_url.get('summary')}]({image_with_summary_and_url.get('url')})",
+            #     md_content)
             md_content = pattern.sub(
-                f"![{image_with_summary_and_url.get('summary')}]({image_with_summary_and_url.get('url')})",
-                md_content)
-        return md_content
+                lambda _: f"![{image_with_summary_and_url.get("summary")}]({image_with_summary_and_url.get("url")})",md_content
+            )
+        # 备份替换摘要和url后的md_content 中去，生成新md文件
+        new_md_path_obj = md_path_obj.parent / str(md_path_obj.stem + "_new.md")
+        with open(new_md_path_obj, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        return new_md_path_obj,md_content
 
     def process(self, state: ImportGraphState):
         """
@@ -279,8 +288,11 @@ class NodeMdImage(NodeBase):
         #第四大步:上传图片到minio，自己构造图片的线上url ,最后将url放到字典列表中
         image_with_summary_and_url_list = self.get_image_with_summary_and_url_list(image_with_summary_list)
         #第五大步:替换md当中的图片
-        new_md_path,md_content  = self.replace_md_image(image_with_summary_and_url_list,md_path_obj,md_content)
-        return new_md_path,md_content
+        new_md_path_obj,md_content  = self.replace_md_image(image_with_summary_and_url_list,md_path_obj,md_content)
+        return {
+            "md_content":md_content,
+            "md_path":str(md_path_obj)
+        }
 
 
 

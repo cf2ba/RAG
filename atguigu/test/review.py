@@ -1,44 +1,88 @@
-# def get_image_with_summary_and_url_list(self, image_with_summary_list):
-#     upload_dir = MinIoConfig.minio_img_dir  # 上传到哪个目录
-#     minio_client = get_minio_client()
-#     # 幂等性删除这个目录中的图片
-#     # 1.拿到桶当中这个目录当中的所有老图片（prefix = upload_dir 代表桶下面的目录，不到文件） recursive作用是遍历子目录
-#     old_image_list = minio_client.list_objects(bucket_name=MinIoConfig.minio_bucket_name, prefix=upload_dir,
-#                                                recursive=True)
-#     # for item in old_image_list:
-#     #     print(item)
-#     # print(old_image_list)
-#     # 2.调用api 批量删除老的图片，delete_object_list这个参数要求必须是DeleteObject对象列表
-#     # 我们就把上面的图片转化为这个图片列表
-#     delete_image_list = [DeleteObject(obj.object_name) for obj in old_image_list]
-#     errors = minio_client.remove_objects(
-#         bucket_name=MinIoConfig.minio_bucket_name,
-#         delete_object_list=delete_image_list
-#     )
-#     for error in errors:
-#         print(f"error occurred when deleting object{error}")
-#     # 准备上传图片
-#     image_with_summary_and_url_list = []
-#     for image_with_summary in image_with_summary_list:
-#         minio_client.fput_object(
-#             bucket_name=MinIoConfig.minio_bucket_name,
-#             # 除了桶之外的路径一直到图片  拼接路径 字符串
-#             object_name=upload_dir + "/" + image_with_summary.get("image_name"),
-#             file_path=image_with_summary.get('image_path'),
-#         )
-#         url = f"http://{MinIoConfig.minio_endpoint}/{MinIoConfig.minio_bucket_name}/{upload_dir}/{image_with_summary.get('image_name')}"
-#         print(url)
-#         image_with_summary_and_url_list.append({
-#             **image_with_summary,
-#             "url": url
-#         })
-#     return image_with_summary_and_url_list
-#
-#
-# def replace_md_image(self, image_with_summary_and_url_list, md_path_obj, md_content):
-#     for image_with_summary_and_url in image_with_summary_and_url_list:
-#         pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_with_summary_and_url.get("image_name")) + r"\)")
-#         # 当碰到特殊字符\s时必须使用lambda 来进行替换 ，lambad可以规避特殊字符，特殊字符也可以替换成功
-#         md_content = pattern.sub(
-#             f"![{image_with_summary_and_url.get("summary")}]({image_with_summary_and_url.get('url')})",
-#             md_content)
+#图片处理节点
+import os
+import re
+from pathlib import Path
+
+from atguigu.import_process.base import NodeBase
+from atguigu.tool.logger import logger
+
+
+class NodeMdImg(NodeBase):
+    name = 'nodemdimg'
+
+    def check_path(self, state):
+        md_path = state.get("md_path", '')
+        if not md_path:
+            logger.error("md_path必须提供")
+            raise ValueError("md_path必须提供")
+        md_path_obj = Path(md_path)
+        if not md_path_obj.exists():
+            logger.error("文件不存在")
+            raise ValueError("文件不存在")
+
+        file_title = state.get("file_title", '')
+        if not file_title:
+            file_title = md_path_obj.stem
+        with open(md_path_obj, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+        if not md_content:
+            logger.error(f"文件内容为空:{md_path}")
+            raise Exception("文件内容为空")
+        return md_path_obj, md_content
+
+
+    def get_image_with_context_list(self,image_name_list,md_content,image_name_path_dir_obj):
+        # 看图片是否符合markdown格式
+        IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+        MAX_CONTEXT_LEN = 200
+        image_with_context_list = []
+        for image_name in image_name_list:
+            if image_name not in IMAGE_EXTENSIONS:
+                logger.error("图片不符合markdown的格式")
+                continue
+            # 正则化去看判断图片是否属于markdown
+            pattern = re.compile(r"!\[.*?\]\(.*?" + re.escape(image_name) + r"\)")
+            # 拿到图片的起始和结束位置
+            match = pattern.search(md_content)
+            # 判断match是否有没有则图片没在markdown中使用
+            if not match:
+                logger.info("图片未被markdown引用")
+                continue
+            start, end = match.span()
+            pre_context = md_content[max(0, start - MAX_CONTEXT_LEN):start]
+            post_context = md_content[end:min(len(md_content), end + MAX_CONTEXT_LEN)]
+            image_path = str(image_name_path_dir_obj / image_name)
+            image_with_context_list.append({
+                "image_name": image_name,
+                "pre_context": pre_context,
+                "post_context": post_context,
+                "image_path": image_path
+            })
+
+            return image_with_context_list
+
+
+
+    def process(self,state):
+        md_path_obj, md_content = self.check_path(state)
+        # 判断图片存储路径是否存在，如果不存在则直接返回md_content不对图片处理
+        image_name_path_dir_obj = md_path_obj.parent / "images"
+        if not image_name_path_dir_obj.exists():
+            return {
+                "md_content": md_content
+            }
+        #将图片的内容和图片的上下文交给大模型让大模型生成图片摘要
+
+
+
+
+
+
+
+
+        pass
+if __name__ == '__main__':
+    node = NodeMdImg()
+    init_state = {
+        "md_path":r"C:\Users\CC\OneDrive\桌面\Output\hak180产品安全手册\hak180产品安全手册.md"
+    }

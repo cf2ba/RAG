@@ -1,157 +1,155 @@
-# 这是分片节点
+#再盘一遍文件切分节点
 import re
 from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from atguigu.import_process.base import NodeBase
-from atguigu.import_process.state import ImportGraphState
 from atguigu.test.node_md_image import current_time
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
 
 
-class NondeDocumentSplit(NodeBase):
-    name = "node_document_split"
+class NodeDocumentSplite(NodeBase):
+    name = "node_document_splite"
 
-    # 防御性判断
     def get_md_content(self, state):
+        """
+        读取MD文件基础信息并做前置合法性校验
+        :param state: LangGraph流转状态字典，存储md_path、file_title参数
+        :return: md_content:MD全文文本, file_title:文档标题, md_path_obj:Path格式文件路径对象
+        :raises ValueError: 未传入md_path参数
+        :raises Exception: 文件为空、文件路径不存在
+        """
+        # 从流转状态获取MD文件路径
         md_path = state.get("md_path", '')
         if not md_path:
             logger.error("md_path必须提供")
-            raise Exception("md_path必须提供")
+            raise ValueError("md_path必须提供")
+        # 转为Path对象方便文件操作
         md_path_obj = Path(md_path)
+        # 校验文件物理存在
         if not md_path_obj.exists():
             logger.error("文件不存在")
-            raise Exception("文件不存在")
-        with open(md_path_obj, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-        if not md_content:
-            logger.error("没有内容")
-            raise Exception("文件没内容")
+            raise ValueError("文件不存在")
+
+        # 读取文档标题，无自定义标题则使用文件名作为标题
         file_title = state.get("file_title", '')
         if not file_title:
             file_title = md_path_obj.stem
-        return md_path_obj, md_content, file_title
-
-    # 粗分按照标题去划分将整个文本文件按照标题划分为一个个的大章节
-    def get_section_list(self, md_content, file_title):
-        # 先将整个文本按行去划分
-        # 由于不同的系统所用到的换行符不同，所以先进行换行符的转义
-        md_content = md_content.replace("\r\n", '\n').replace("\r", "\n")
+        # 以UTF-8编码读取完整MD文件内容
+        with open(md_path_obj, 'r', encoding='utf-8') as f:
+            md_content = f.read()
+        # 校验文件非空
+        if not md_content:
+            logger.error(f"文件内容为空:{md_path}")
+            raise Exception("文件内容为空")
+        return md_content, file_title, md_path_obj
+    #实现粗切分
+    def get_section_list(self,md_content,file_title):
+        #先转义换行符
+        md_content = md_content.replace("\r\n","\n").replace("\r","\n")
+        #按行划分
         md_line_list = md_content.split("\n")
-        # 判断是不是一个标题呢通过#来判断，但是在代码块代码围栏中#是注释，所以我们先要判断是不是在代码围栏中，怎么判断他是不是一个代码围栏呢，就要判断他是不是以~~~或这```开头
-        # 正则判断是不是代码围栏
-        code_pattern = r"^(`{3,}|~{3,})"
-        # 如果是代码围栏，那我们就要考虑代码块是否结束，下一个#是不是注释
-        # 还有有一个占位去判断是不是同一个代码围栏，因为可能会出现多个代码围栏嵌套的存在不知道
-        marker = None
-        is_code_block = False
-        current_index = 0
+        #粗分按照一个标题进行一个章节一个章节的划分  #按标题划分那就要考虑#是在哪了，如果在代码块围栏那就是注释
+        #先根据正则去看代码框围栏
+        code_pattern = []
+        is_code_index = False
+        marker = None #用来标识代码块是以```还是~~~开始
         section_list = []
-        title_pattern = r'^\s*#{1,6}\s+.+'  # 标题索引
-        for idx, md_line in enumerate(md_line_list):
-            code_match = re.match(code_pattern, md_line)
-            if code_match:
-                is_code_block = True
-                marker = code_match.group(1)
-                logger.info("是代码围栏开头")
-            else:
-                is_code_block = False
-                marker = None
-                logger.info("是代码围栏结束")
-            # 如果走到这那就是不是代码围栏，那我们就进行拼接，需要是标题且不是代码围栏且满足标题索引
-            if not code_match and re.match(title_pattern, md_line):
-                temp = md_line_list[current_index:idx]
-                content = "\n".join(temp)
+        current_time = 0
+        title_pattern = r'^\s*#{1,6}\s+.+'
+        for idx,md_line in enumerate(md_line_list):
+            md_line = md_line.strip()
+            match = re.compile(code_pattern,md_line) #这是代码块，如果在代码块，那我们就要考虑它是代码块的开始还是结束，所以就需要一个占位符
+            if match:
+                if not is_code_index:
+                    is_code_index = True
+                    marker = match.group(1)
+                    logger.info("代码框的开始")
+                else:
+                    if marker == match.group(1):
+                        is_code_index =False
+                        marker = None
+                        logger.info("代码块的结束")
+            #不在代码框那就是判断是不是标题
+            if not is_code_index and re.match(title_pattern,md_line):
+                temp_list = md_line_list[current_time,idx]
+                content = "\n".join(temp_list)
                 section_list.append({
-                    "title": temp[0] if content.startswith("#") else "无标题",
-                    "file_title": file_title,
-                    "content": content
-
+                    "title":temp_list[0] if content.startwith("#") else  "没有标题",
+                    "content":content,
+                    "file_title":file_title
                 })
-            # 更新当前的index
-            current_index = idx
-            # 最后一个大的章节后边没有标题
-        section_list.append(
-            {
-                "title": md_line_list[current_index],
-                "file_title": file_title,
-                "content": "\n".join(md_line_list[current_index:])
-            }
-        )
-        return section_list  # 上边实现了粗分
+            #更新当前current_time = idx
+            current_time = idx
+            #还要考虑到最后一章节其下边没有标题
+            section_list.append({
+                "title":md_line_list[current_time],
+                "content":md_line_list[current_time:],
+                "file_title":file_title
+            })
 
-    # 下边细分长分短合
-    def get_final_section_list(self, section_list, file_title):
-        # 定义一个章节的最大长度
+        return section_list
+
+    def get_final_section_list(self,section_list,file_title,md_path_obj):
         max_len = 300
         over_lap = 30
-        spliter = RecursiveCharacterTextSplitter(
+        final_section_list = []
+        #用真实的内容去切
+        #构造
+        splite =RecursiveCharacterTextSplitter(
             separators=["\n\n", "\n", "。", "！", "？", "；", ".", "!", "?", ";", " "],
             chunk_size=max_len,
-            chunk_overlap=over_lap,
+            chunk_overlap=over_lap
         )
-        final_section_list = []
-
         for section in section_list:
-            content = section.get("content")  # 内容
-            title = section.get("title")
-            # 就要考虑标题在内容中的影响，如果一个章节进行切分为多个部分,那除了切出来的第一部分有标题信息，其他部分没有标题信息，
-            # 后边检索的时候可能会把他判断到其他标题下去，同时也是为了未来方便溯源，后边有用户反馈RAG有一标题下的知识有问题时可以通过标题很快找到有问题的地方
-            # 所以我们就拿真正的内容去切分，不用拿标题
-            # 真实的内容时content - title  要考虑有没有标题的情况 如果没有标题  通过切片实现
-            real_content = content[len(title):] if content.startswith('#') else content
-            # 拿到真实的内容去切片用递归分割器 需要进行判断，如果章节比我们要切分的chunk_size小那就不去切分
+            content = section_list.get("content")
+            title = section_list.get("title")
+            #content -title
+            real_content = content[len(title):] if content.startwith("#") else content
+        #考虑到如果章节长度不足chunk_size不用切片
             if len(real_content) < max_len:
+                final_section_list.append(
+                    { **section,
+                    "part":0}
+                )
+                continue
+            if "<table>" in real_content:
+                final_section_list.appen(
+                    {
+                        **section,
+                        "part":0
+                    }
+
+                )
+                continue
+            splite_list = splite.split_text(real_content)
+            for chunk in splite_list:
                 final_section_list.append({
-                    **section,
-                    "part": 0  # 去标识是否切分
+                    "title":title,
+                    "file_title":file_title,
+                    "content":title +"\n\n"+ chunk
                 })
-            # 考虑如果章节是表格，也不进行切分否则可能会破坏表格
-            # if real_content.startwith("<table>"):
-            if "<table" in real_content:
-                final_section_list.append({
-                    **section,
-                    "part": 0  # 去标识是否切分
-                })
-            # 走到这说明不是以上两种情况可以直接去切分了
-            split_chunk_list = spliter.split_text(real_content)
-            # print(split_list)
-            for idx, chunk in enumerate(split_chunk_list):
-                final_section_list.append({
-                    "title": title,
-                    "file_title": file_title,
-                    "count": title + "\n\n" + chunk,
-                    "part": idx
-
-                })
-        return final_section_list
-
-        # 转移后按照章节标题前的内容进行拼接作为上一个标题下的内容
-        # if
-
-    def process(self, state: ImportGraphState):
-        md_path_obj, md_content, file_title = self.get_md_content(state)
-        section_list = self.get_section_list(md_content, file_title)
-        final_section_list = self.get_final_section_list(section_list, file_title)
-
-        # 将final_section_list 保存到文件中
-        with open(md_path_obj.parent/ f"split_chunk.json", "w", encoding="utf-8") as f:
+        with open(md_path_obj.parent/f"chunks1.json","w",encoding="utf-8") as f:
             f.write(json_format_tool(final_section_list))
 
-        return {
-            "final_section_list": final_section_list
-        }
+        return final_section_list
 
+
+
+
+
+
+
+    def processs(self,state):
         pass
 
-
 if __name__ == '__main__':
-    node = NondeDocumentSplit()
+    node = NodeDocumentSplite()
     init_state = {
-        "md_path": r"C:\Users\CC\OneDrive\桌面\Output\hak180产品安全手册\hak180产品安全手册_new.md"
-
+        "md_path":r"C:\Users\CC\OneDrive\桌面\Output\hak180产品安全手册\hak180产品安全手册_new.md",
     }
+
     result = node(init_state)
     logger.info(json_format_tool(result))

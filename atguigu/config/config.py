@@ -36,3 +36,18 @@ class MinIoConfig:
     minio_bucket_name = os.getenv('MINIO_BUCKET_NAME')
     # 图片上传目录
     minio_img_dir = os.getenv('MINIO_IMG_DIR')
+
+class EmbeddingConfig:
+    # BGE Embedding Models
+    # ====================
+    # BGE-M3 模型本地路径（根据下载模型的成功提示来设置）
+    bge_m3_path = os.getenv("BGE_M3_PATH")
+    # bge-m3 模型名称
+    bge_m3 = os.getenv("BGE_M3 ")
+    # 嵌入模型运行设备，cuda:0表示使用第1块gpu，cpu表示使用cpu，cuda:n表示第n+1块gpu
+    bge_device = os.getenv("BGE_DEVICE")
+    # 是否使用半精度（true/false）1=开启（gpu加速更高效），0=关闭（兼容低版本gpu/cpu）
+    bge_fp16 =True if os.getenv("BGE_FP16 ") in("True",1,True,"1") else False
+if __name__ == '__main__':
+    print(os.getenv("BGE_FP16"),type(os.getenv("BGE_FP16")))
+    # print(bool(os.getenv("BGE_FP16")))

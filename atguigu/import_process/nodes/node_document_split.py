@@ -91,7 +91,8 @@ class NodeDocumentSplit(NodeBase):
                 if not is_in_block:
                     # 开启代码块，记录围栏符号
                     is_in_block = True
-                    marker = match.group(1)
+                    marker = match.group(1)   #group（1）是捕获分组，提取正则中第一个圆括号（）捕获到的内容
+                    print(marker)
                     logger.info(f"开始代码块:{marker}")
                 else:
                     # 匹配到相同围栏符号，闭合代码块

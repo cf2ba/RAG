@@ -131,6 +131,7 @@ class NodePDFToMD(NodeBase):
             raise Exception("下载pdf文件处理结果zip压缩包请求失败")
         #因为这次的数据内容是直接放在请求回来的响应对象上的，所以我们只需要做一层考虑
         md_zip_content = md_zip_url.content
+        # print(md_zip_content)
         #获取到的是zip的内容，并不是直接变成zip文件，我们需要同各国文件流操作把这个内容写入磁盘文件
         #pdf_path_obj.stem只有文件前缀无后缀 .name会有后缀
         md_zip_path_obj = local_dir_obj/f"{pdf_path_obj.stem}.zip"

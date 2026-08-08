@@ -48,6 +48,12 @@ class EmbeddingConfig:
     bge_device = os.getenv("BGE_DEVICE")
     # 是否使用半精度（true/false）1=开启（gpu加速更高效），0=关闭（兼容低版本gpu/cpu）
     bge_fp16 =True if os.getenv("BGE_FP16 ") in("True",1,True,"1") else False
+class MilvusConfig:
+    milvus_url = os.getenv("MILVUS_URL")
+    # 知识库切片集合名
+    chunks_collection = os.getenv("CHUNKS_COLLECTION")
+    # 商品名称集合名
+    item_name_collection = os.getenv("ITEM_NAME_COLLECTION")
 if __name__ == '__main__':
     print(os.getenv("BGE_FP16"),type(os.getenv("BGE_FP16")))
     # print(bool(os.getenv("BGE_FP16")))

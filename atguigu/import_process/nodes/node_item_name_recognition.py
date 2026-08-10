@@ -104,7 +104,7 @@ class NodeItemNameRecognition(NodeBase):
         item_name = result.content
         # 清洗换行、空格、制表符，规整主体名称格式
         item_name = item_name.replace(" ", "").replace("\n", "").replace("\t", "")
-        print(item_name)
+        # print(item_name)
         # 模型识别结果为空，降级使用文档标题
         if not item_name:
             logger.warning("LLM主体名称识别为空，使用文档标题兜底")

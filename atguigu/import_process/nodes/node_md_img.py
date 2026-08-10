@@ -17,7 +17,7 @@ from atguigu.tool.logger import logger
 from atguigu.tool.minio_client_tool import  get_minio_client
 
 
-class NodeMdImage(NodeBase):
+class NodeMdImg(NodeBase):
     """
     Markdown图片处理节点
     功能：校验MD文件、匹配文档内引用图片、截取图片前后上下文、基于视觉大模型生成图片摘要
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     主程序测试入口
     单独运行该文件测试图片解析节点完整逻辑
     """
-    node = NodeMdImage()
+    node = NodeMdImg()
     init_state = {
         "md_path": r"C:\Users\CC\OneDrive\桌面\Output\hak180产品安全手册\hak180产品安全手册.md"
     }

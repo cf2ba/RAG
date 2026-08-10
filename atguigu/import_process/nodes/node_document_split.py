@@ -178,7 +178,7 @@ class NodeDocumentSplit(NodeBase):
             for idx, splite_chunk in enumerate(splite_chunk_list):
                 final_section_list.append({
                     "title": title,
-                    "fifle_title": file_title,  # 字段拼写为原始写法，不做修改
+                    "file_title": file_title,  # 字段拼写为原始写法，不做修改
                     "content": title + "\n\n" + splite_chunk,  # 分片内容前置章节标题
                     "part": idx  # 分片序号，用于溯源分片属于原章节第几段
                 })

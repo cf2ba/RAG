@@ -54,6 +54,15 @@ class MilvusConfig:
     chunks_collection = os.getenv("CHUNKS_COLLECTION")
     # 商品名称集合名
     item_name_collection = os.getenv("ITEM_NAME_COLLECTION")
+class MongoConfig:
+    # ====================
+    # Document Database (MongoDB)
+    # ====================
+    # MongoDB 连接 URL
+    mongo_url = os.getenv("MONGO_URL")
+    # 数据库名
+    mongo_db_name = os.getenv("MONGO_DB_NAME")
+
 if __name__ == '__main__':
     print(os.getenv("BGE_FP16"),type(os.getenv("BGE_FP16")))
     # print(bool(os.getenv("BGE_FP16")))

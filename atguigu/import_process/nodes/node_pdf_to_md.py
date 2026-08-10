@@ -113,8 +113,8 @@ class NodePDFToMD(NodeBase):
                 if data["state"] != "done":
                     logger.info("pdf文件处理中")
                     raise Exception("pdf文件处理中")
-                zip_url = data["full_zip_url"]
-                return zip_url
+                md_zip_url = data["full_zip_url"]
+                return md_zip_url
             except Exception as e:
                 logger.error(f"pdf文件处理异常，等待重试{e}")
                 end_time = time.time()
@@ -124,13 +124,13 @@ class NodePDFToMD(NodeBase):
                 continue
     def download_pdf(self, md_zip_url,local_dir_obj,pdf_path_obj):
         import requests
-        md_zip_url =requests.get(md_zip_url)
+        response =requests.get(md_zip_url,verify=False,timeout=60)
         #发送请求，三层考虑（请求/请求数据/请求结果），
-        if md_zip_url.status_code != 200:
+        if response.status_code != 200:
             logger.error("下载pdf文件处理结果zip压缩包请求失败")
             raise Exception("下载pdf文件处理结果zip压缩包请求失败")
         #因为这次的数据内容是直接放在请求回来的响应对象上的，所以我们只需要做一层考虑
-        md_zip_content = md_zip_url.content
+        md_zip_content = response.content
         # print(md_zip_content)
         #获取到的是zip的内容，并不是直接变成zip文件，我们需要同各国文件流操作把这个内容写入磁盘文件
         #pdf_path_obj.stem只有文件前缀无后缀 .name会有后缀

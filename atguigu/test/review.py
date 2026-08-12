@@ -1,176 +1,138 @@
-#图片处理节点
-import base64
-import os
-import re
-import time
-from collections import deque
-from pathlib import Path
+# atguigu/query_process/nodes/node_item_name_confirm.py
 
-from ada92cb5d92a588d1b93__mypyc import init_charset_normalizer___md
+
+
+
+
+import json
+
 from langchain.chat_models import init_chat_model
-from minio.deleteobjects import DeleteObject
-from pymongo.common import MAX_CONNECTING
 
-from atguigu.config.config import LLMConfig, MineruToken, MinIoConfig
-from atguigu.import_process.base import NodeBase
-from atguigu.test.node_md_image import need_wait_time
+from atguigu.config.config import MilvusConfig
+from atguigu.query_process.base import NodeBase
+from atguigu.query_process.state import QueryGraphState
+from atguigu.tool.bgem3_client_tool import get_bge_m3_embedding
+from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.minio_client_tool import get_minio_client
+from atguigu.tool.milvus_client_tool import create_reqs, search_hybrid
+from atguigu.tool.mongodb import get_recent_history_list, add_or_update_history, collection, update_item_names_and_query
 
 
-class NodeMdImg(NodeBase):
-    name = 'nodemdimg'
+class NodeItemNameConfirm(NodeBase):
+    """
+    节点功能：确认用户问题中的核心商品名称。
+    """
 
-    def check_path(self, state):
-        md_path = state.get("md_path", '')
-        if not md_path:
-            logger.error("md_path必须提供")
-            raise ValueError("md_path必须提供")
-        md_path_obj = Path(md_path)
-        if not md_path_obj.exists():
-            logger.error("文件不存在")
-            raise ValueError("文件不存在")
+    # 覆盖基类的 name 属性，标识节点名称
+    name: str = "node_item_name_confirm"
 
-        file_title = state.get("file_title", '')
-        if not file_title:
-            file_title = md_path_obj.stem
-        with open(md_path_obj, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-        if not md_content:
-            logger.error(f"文件内容为空:{md_path}")
-            raise Exception("文件内容为空")
-        return md_path_obj, md_content
+    def process(self, state: QueryGraphState):
+        """
+        节点逻辑
+        :param state: 工作流状态对象
+        :return: 更新后的状态对象
+        """
+        #先拿到会话id
+        session_id = state.get("session_id")
+        if not session_id:
+            raise ValueError("会话id不存在")
+        original_query = state.get("original_query")
+        if not original_query:
+            raise ValueError("没有提问")
+        #如果有问题，则需要更新历史记录
+        message_id = add_or_update_history(session_id=session_id,role="user",rewritten_query=original_query)
+        #根据会话id获取当前几条历史对话
+        history_list = get_recent_history_list(session_id=session_id,limit=10)
+        #拿到后进行进行拼接
+        history_content = ''
+        for history in history_list:
+            role=history.get("role")
+            text =history.get("text")
+            content=f"{role}{text}\n"
+            history_content += content
 
 
-    def get_image_with_context_list(self,image_name_list,md_content,image_name_path_dir_obj):
-        # 看图片是否符合markdown格式
-        IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
-        MAX_CONTEXT_LEN = 200
-        image_with_context_list = []
-        for image_name in image_name_list:
-            if image_name not in IMAGE_EXTENSIONS:
-                logger.error("图片不符合markdown的格式")
-                continue
-            # 正则化去看判断图片是否属于markdown
-            pattern = re.match(r"!\[.*?\]\(.*?" + re.escape(image_name) + r"\)")
-            # 拿到图片的起始和结束位置
-            match = pattern.search(md_content)
-            # 判断match是否有没有则图片没在markdown中使用
-            if not match:
-                logger.info("图片未被markdown引用")
-                continue
-            start, end = match.span()
-            pre_context = md_content[max(0, start - MAX_CONTEXT_LEN):start]
-            post_context = md_content[end:min(len(md_content), end + MAX_CONTEXT_LEN)]
-            image_path = str(image_name_path_dir_obj / image_name)
-            image_with_context_list.append({
-                "image_name": image_name,
-                "pre_context": pre_context,
-                "post_context": post_context,
-                "image_path": image_path
-            })
+        #构建大模型
+        llm = init_chat_model()
+        messages = []
+        res = llm.invoke(messages)
 
-            return image_with_context_list
+        res_json= res.content
+        #它是一个代码框对齐进行替换
+        if res_json.startswith("```json"):
+            res_json = res_json.replace("```json","").replace("'''","")
+        #对其进行反序列化
+        res_dict=json.loads(res_json)
+        #反序列化后可以拿到item_names 和rewritten_query
+        item_names = res_dict.get("item_names")
+        if item_names:
+            for item_name in item_names:
+                item_name = item_name.replace("\n",'').replace("\t","").replace(" ",'')
+        else:
+            item_names = []
 
-    def get_image_with_summary_list(self,image_with_context_list):
-        #初始化大模型
-        llm = init_chat_model(
-            model = LLMConfig.vl_model,
-            model_provider="openai",
-            api_key=LLMConfig.openai_api_key,
-            base_url=LLMConfig.openai_base_url,
-            temperature = float(LLMConfig.llm_default_temperature)
-        )
-        # MAX_CONTEXT_LEN = 200
-        dq = deque(max_len = 30)
+        rewritten_query = res_dict.get("rewritten_query")
+        if not rewritten_query:
+            rewritten_query=original_query
 
-        for image_with_context in image_with_context_list:
-            current_time = time.time()
-            #上来先盲清一波
-            while dq and current_time - dq[0] > 60:
-                dq.popleft()
-                current_time = time.time()
-
-            if dq and len(dq) == dq.maxlen:
-                current_time = time.time()
-                #需要等待
-                need_wait_time = 60 - (current_time - dq[0])
-                if need_wait_time >0:
-                    time.sleep(need_wait_time)
-                current_time = time.time()
-                while dq and current_time-dq[0] >60:
-                    dq.popleft()
-
-            # 因为大模型有限流所以用滑动窗口算法
-            dq.append(current_time)
-            #接下来就是对图片处理为base64，减少http请求#让 数据再文本协议安全传输
-            with open(image_with_context.get("image_path"),'rb') as f:
-                image_data = f.read()
-                base64_str = base64.b64encode(image_data).decode("utf-8")
-            #给大模型的发送请求
-            #构造提示词参考阿里云
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "data:image/jpeg;base64," + base64_str,
-                            },
-                        },
-                        {
-                            "type": "text",
-                            "text": f"这是一张图片，图片的上文部分为{image_with_context.get('pre_text')},图片的下文为{image_with_context.get('post_text')},请用中文摘要总结这张图片的摘要，字数在50字以内"
-                        },
-                    ],
-                },
-            ]
-            result = llm.invoke(messages)
-
-            image_with_context_list.append(
-                {
-                    "image_name":image_with_context.get("image_name"),
-                    "image_path":image_with_context.get("image_path"),
-                    "summary":result.content
-                }
+        collection_name = MilvusConfig.item_name_collection
+        final_item_name = []
+        #下一步就是向量化大模型识别的主题和milvus中已经存库的rag外挂文件的主题进行混合检索得到向量化评分
+        for idx,item_name in enumerate(item_names):
+            embeddings = get_bge_m3_embedding(item_name)
+            reqs = create_reqs(
+                dense_data=embeddings.get("dense")[idx],
+                sparse_data=embeddings.get("sparse")[idx],
+                dense_anns_field="dense_vector",
+                sparse_anns_field="sparse_vector",
+                limit=10
             )
-            return image_with_context_list
+            #混合检索
+            res = search_hybrid(
+                collection_name=collection_name,
+                reqs=reqs,
+                ranker=(0.8,0.2),
+                limit=10,
+                output_fields=[item_name]
+            )
+            print(res)
+            print(res[0])
+            #混合检索后对结果进行整理
+            for item in res[0]:
+                search_result={
+                    "original_item_name":item_name,
+                    "search_item_name":item.get("entity").get("item_name"),
+                    "score":item.get("distance")
+                }
+                final_item_name.extend(search_result)
+        #接下来更具向量化分数进行标准化对齐
+        confirm_item_name = [
+            final_item.get("item_name")
+            for final_item in final_item_name
+        if final_item.get("score") >=0.85
+        ]
+        option_item_name = [
+            final_item.get("item_name") for final_item in final_item_name if final_item.get("score") > 0.6
+        ]
 
-        #获取图片url通过minio中间工具实现
-        def get_image_with_summary_and_url_list(self,image_with_summary_list):
-            minio_client = get_minio_client()
-            upload_dir = MinIoConfig.minio_img_dir
-            #考虑到可能有历史图片在上传路径下，所以需要做一个幂等性删除
-            old_image_list = minio_client.list_objects(bucket_name=MinIoConfig.minio_bucket_name,prefix= upload_dir,recursive= True)
-            #幂等性删除但参数需要的必须是DeleteObject对象
-            delete_image_list = [DeleteObject(obj.object_name) for obj in old_image_list]
-            errors = minio_client.remove_object(bucket_name=MinIoConfig.minio_bucket_name,delete_object_list = delete_image_list)
-            #删除后上传图片到minio
-            image_with_summary_url_list  = []
-            for image_with_summary in image_with_summary_list :
-                minio_client.fget_object(
+        if confirm_item_name:
+            #回填的内容
+            answer=""
+            final_item_name=confirm_item_name
+        elif option_item_name:
+            answer=f"请确定你要咨询的商品是哪些{",".join(option_item_name)}"
+            final_item_name=[]
+        else:
+            answer=f"无法识别你要咨询哪个产品，请重新提问"
+            final_item_name=[]
 
-                )
-
-
-
-
-
-
-
-
-
-
-    def process(self,state):
-        md_path_obj, md_content = self.check_path(state)
-        # 判断图片存储路径是否存在，如果不存在则直接返回md_content不对图片处理
-        image_name_path_dir_obj = md_path_obj.parent / "images"
-        if not image_name_path_dir_obj.exists():
-            return {
-                "md_content": md_content
-            }
-        #将图片的内容和图片的上下文交给大模型让大模型生成图片摘要
+    #下一步就是要进行根据是否有回答 ，更新会话历史记录，同时增量更新 根据ids进行更新
+        if answer:
+            message_id=add_or_update_history(session_id,"assistant",rewritten_query)
+        history_list=get_recent_history_list(session_id,limit=10)
+        ids = [history.get("_id") for history in history_list]
+        if ids:
+            update_item_names_and_query(ids,final_item_name,rewritten_query)
 
 
 
@@ -179,9 +141,17 @@ class NodeMdImg(NodeBase):
 
 
 
-        pass
+
+
+        logger.info(f"【{self.name}】节点逻辑")
+
+        return state
+
 if __name__ == '__main__':
-    node = NodeMdImg()
+    node = NodeItemNameConfirm()
     init_state = {
-        "md_path":r"C:\Users\CC\OneDrive\桌面\Output\hak180产品安全手册\hak180产品安全手册.md"
+        "session_id":"test001",
+        "original_query":"是什么"
     }
+    res = node(init_state)
+    logger.info(json_format_tool(res))

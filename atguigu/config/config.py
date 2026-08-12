@@ -62,6 +62,9 @@ class MongoConfig:
     mongo_url = os.getenv("MONGO_URL")
     # 数据库名
     mongo_db_name = os.getenv("MONGO_DB_NAME")
+class McpConfig:
+    mcp_dashscope_base_url=os.getenv("MCP_DASHSCOPE_BASE_URL")
+    mcp_api_key=os.getenv("MCP_API_KEY")
 
 if __name__ == '__main__':
     print(os.getenv("BGE_FP16"),type(os.getenv("BGE_FP16")))

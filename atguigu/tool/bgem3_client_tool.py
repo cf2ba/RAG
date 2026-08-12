@@ -24,8 +24,8 @@ def get_bge_m3_model():
 def get_bge_m3_embedding(texts: List[str]):
     bge_m3_model = get_bge_m3_model()
     embedding = bge_m3_model.encode_documents(texts)
-    print(embedding.get("dense"))
-    print(embedding.get("sparse"))   #前一列位置 后一列分数
+    # print(embedding.get("dense"))
+    # print(embedding.get("sparse"))   #前一列位置 后一列分数
     #打印查看稠密向量的本质类型
     # for dense_item  in embedding.get("dense"):
     #     print(dense_item,type(dense_item))

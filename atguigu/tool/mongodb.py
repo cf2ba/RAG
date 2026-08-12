@@ -20,10 +20,11 @@ db = None
 def get_mongo_collection():
     mongo_client = get_mongo_client()
     global collection,db
-    if not db:
-        db = mongo_client[MongoConfig.mongo_db_name]
-    if not collection:
-        collection = db['chat_history']
+    if  db is None:
+        db = mongo_client[MongoConfig.mongo_db_name]   #等价于 use 库名
+    if collection is None:
+        #集合存在也不会报错
+        collection = db['chat_history']   #等价于 db.createCollection("chat_history") 只是这样写如果集合存在会抛出异常
         collection.create_index([("_id",1),("ts",-1),("session_id",1)])#唯一值创索引
     return collection
 #对历史记录进行增删改查的方法，查询最近的多少条历史记录
@@ -52,7 +53,7 @@ def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=N
             "item_names": item_names,
             "ts": ts or int(time.time())
         }
-        collection.updataOne({"_id":_id},{"$set":data})
+        collection.update_one({"_id":_id},{"$set":data})
         return _id
         pass
     else:
@@ -71,14 +72,14 @@ def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=N
 #清空历史记录
 def clear_history(session_id):
     collection = get_mongo_collection()
-    collection.deleteMang({"session_id":session_id})
-def update_item_names_and_query(session_id,item_names=None,rewritten_query=None):
+    collection.delete_many({"session_id":session_id})
+def update_item_names_and_query(ids,item_names=None,rewritten_query=None):
+    collection=get_mongo_collection()
     data = {
-        "session_id": session_id,
         "rewritten_query": rewritten_query,
         "item_names": item_names
     }
-    collection.updateOne({"session_id":session_id},{"$set":data})
+    collection.update_many({"_id":{"$in":ids}},{"$set":data})
 
 if __name__ == '__main__':
     add_or_update_history("test_001","user","咨询下烫金机")

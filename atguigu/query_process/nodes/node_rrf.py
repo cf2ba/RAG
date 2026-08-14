@@ -57,7 +57,7 @@ class NodeRrf(NodeBase):
                 chunk_score = chunk.get("score") + weight / (idx + 60)
 
                 # 判断文档是否在其它通路已经出现
-                if chunk_id in final_chunks_dict:
+                if chunk_id in final_chunks_dict.keys():
                     # 重复文档：累加多路计算得到的RRF分数
                     final_chunks_dict.get(chunk_id)["score"] += chunk_score
                 else:

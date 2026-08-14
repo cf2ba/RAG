@@ -23,4 +23,5 @@ dependencies = [
     "torchvision>=0.28.0",
     "transformers>=5.14.1",
     "mcp>=1.28,<2",
+    "dashscope>=1.26.7",
 ]

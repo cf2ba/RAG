@@ -66,6 +66,9 @@ class McpConfig:
     mcp_dashscope_base_url=os.getenv("MCP_DASHSCOPE_BASE_URL")
     mcp_api_key=os.getenv("MCP_API_KEY")
 
+class RerankerConfig:
+    rerank_base_url = os.getenv("RERANK_BASE_URL")
+    rerank_api_key = os.getenv("RERANK_API_KEY")
 if __name__ == '__main__':
     print(os.getenv("BGE_FP16"),type(os.getenv("BGE_FP16")))
     # print(bool(os.getenv("BGE_FP16")))

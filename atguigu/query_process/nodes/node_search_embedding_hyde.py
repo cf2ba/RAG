@@ -76,11 +76,11 @@ class NodeSearchEmbeddingHyde(NodeBase):
         collection_name = MilvusConfig.chunks_collection
 
         # 5. 转义item_names内部特殊字符，防止构建Milvus表达式时出现引号语法报错
-        item_names = [item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-                      for item in item_names
-                      ]
+        # item_names = [item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        #               for item in item_names
+        #               ]
         # 构造Milvus标量过滤表达式：限定只检索指定item_name范围内的数据
-        expr = f"item_name in {json.dumps(item_names)}"  # Milvus要求in后紧跟JSON数组字符串
+        expr = f"item_name in {json.dumps(item_names,ensure_ascii=False)}"  # Milvus要求in后紧跟JSON数组字符串
 
         # 6. 组装混合检索请求参数：稠密向量、稀疏向量、对应索引字段、召回条数、过滤条件
         reqs = create_reqs(

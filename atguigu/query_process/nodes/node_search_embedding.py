@@ -49,13 +49,13 @@ class NodeSearchEmbedding(NodeBase):
         collection_name = MilvusConfig.chunks_collection
 
         # 4. 转义item_name特殊字符，防止构建expr表达式时引号、反斜杠语法报错
-        item_names = [
-            item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-            for item in item_names
-        ]
+        # item_names = [
+        #     item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        #     for item in item_names
+        # ]
         # 构建Milvus标量过滤表达式：仅检索匹配item_name的文档块
         # Milvus IN 语法要求列表使用标准json字符串格式
-        expr = f"item_name in {json.dumps(item_names)}"
+        expr = f"item_name in {json.dumps(item_names,ensure_ascii=False)}"
 
         # 5. 组装混合检索请求参数
         reqs = create_reqs(

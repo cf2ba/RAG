@@ -100,7 +100,7 @@ class NodeRerank(NodeBase):
         # 调用重排序工具，传入查询与文本列表，limit设为文档总数以返回全部打分结果
         res = text_rerank(query=rewritten_query, texts=texts, limit=len(merge_docs))
         # logger.info(json_format_tool(res))
-        # print(res)
+        print(res)
 
         # 将重排模型返回的分数按索引回填到原文档列表中
         for item in res:

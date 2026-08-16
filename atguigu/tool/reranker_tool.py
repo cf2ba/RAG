@@ -20,7 +20,7 @@ def text_rerank(query,texts,limit=10):
             instruct="Given a web search query, retrieve relevant passages that answer the query."
         )
         if resp.status_code == HTTPStatus.OK:
-            print(resp.output)
+            # print(resp.output)
             return[
                 {
                     "index":item.index,

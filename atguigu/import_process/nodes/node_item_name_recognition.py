@@ -209,7 +209,7 @@ class NodeItemNameRecognition(NodeBase):
             collection_name=collection_name,
             data=data
         )
-        # 给每一个切片都打上主体名称标签
+        # 给每一个切片都打上主体名称标签 回填原来chunk中加入item_name键值对
         for chunk in chunks:
             chunk["item_name"] = item_name
         # 【BUG修复】原代码只return最后一个chunk，改为返回完整chunks列表

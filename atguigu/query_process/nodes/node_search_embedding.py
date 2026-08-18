@@ -80,20 +80,20 @@ class NodeSearchEmbedding(NodeBase):
 
         # 7. 格式化Milvus返回结构，统一组装成下游通用chunk格式
         # entity为文档原始字段，distance为混合相似度得分，source标记知识库来源
-        embeddings_chunks = [
+        embedding_chunks = [
             {
-                **item.get("entity"),
+                **item.get("entity",{}),
                 "score": item.get("distance"),
                 "source": "local"
             }
             for item in res[0]
         ]
         # 打印格式化后的检索结果日志
-        logger.info(json_format_tool(embeddings_chunks))
+        logger.info(json_format_tool(embedding_chunks))
 
         # 返回更新字段，写入全局状态，下游节点读取 embeddings_chunks
         return {
-            "embeddings_chunks": embeddings_chunks
+            "embedding_chunks": embedding_chunks
         }
 
 

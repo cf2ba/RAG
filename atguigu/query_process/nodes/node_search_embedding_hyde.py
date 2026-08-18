@@ -64,7 +64,7 @@ class NodeSearchEmbeddingHyde(NodeBase):
         ]
         # 调用大模型生成假设答案
         res = llm.invoke(messages)
-        print(res.content)
+        # print(res.content)
         hyde_answer = res.content
 
         # HyDE核心：原始改写查询拼接LLM生成的虚拟答案作为向量化输入文本
@@ -101,7 +101,7 @@ class NodeSearchEmbeddingHyde(NodeBase):
         )
 
         # 7. 格式化Milvus返回结果，统一结构：把entity字段展开，增加相似度score与数据源标记
-        hyde_embeddings_chunks = [
+        hyde_embedding_chunks = [
             {
                 **item.get("entity"),       # 取出数据库存储的业务字段
                 "score": item.get("distance"),  # 检索相似度分数
@@ -114,7 +114,7 @@ class NodeSearchEmbeddingHyde(NodeBase):
 
         # 返回状态更新字典，写入hyde_embeddings_chunks，传递给下游节点
         return {
-            "hyde_embeddings_chunks": hyde_embeddings_chunks
+            "hyde_embedding_chunks": hyde_embedding_chunks
         }
 
         # TODO 原有遗留注释，原样保留

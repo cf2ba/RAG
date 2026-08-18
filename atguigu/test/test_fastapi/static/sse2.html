@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    <button id="btn"> 点击发请求</button>
+    <div id = "content"></div>
+    <script>
+        //JSON.stringfiy()序列化 json.dumps
+        //json.parse()反序列化 json.loads
+        btn = document.getElementById("btn")
+        //post请求，传递的参数全是请求体参数
+        btn.onclick = async function(){
+            res = await  fetch("http://localhost:8000/sse02",{
+                method:"POST",
+                headers:{
+                    "Content-type":'application/json'
+                },
+                body:JSON.stringify({
+                    query:"你是谁",
+                    session_id:"abc"
+                })
+            })
+            data = await res.json()
+            console.log(data)
+            es =  new EventSource("http://localhost:8000/stream/abc")
+            //消息事件
+            es.onmessage = function(e){
+                if (e.data !== "None"){
+                    //如果没有赋值就是读取，赋值就是写入
+                    document.getElementById("content").innerHTML += e.data + "</br>"
+                }else{
+                    console.log("结束了")
+                    es.close()
+                }
+            }
+
+        }
+    </script>
+
+</body>
+</html>

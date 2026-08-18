@@ -10,7 +10,7 @@
 <input type="text" id="ipt">
 <div id="content"></div>
 <script>
-    const btn = document.getElementById("btn")
+    let btn = document.getElementById("btn")
     btn.onclick = async function () {
         const session_id = document.getElementById("ipt").value
         const res = await fetch("http://localhost:8000/sse01?session_id=" + session_id)
@@ -30,3 +30,4 @@
 </script>
 </body>
 </html>
+

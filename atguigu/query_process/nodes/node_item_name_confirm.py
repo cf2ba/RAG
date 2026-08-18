@@ -28,7 +28,6 @@ class NodeItemNameConfirm(NodeBase):
     5. 根据相似度阈值判定：直接确认商品 / 向用户发起候选确认 / 识别失败
     6. 更新mongodb历史记录，回填识别到的商品名与改写后的query，输出状态
     """
-
     # 覆盖基类的 name 属性，标识节点名称
     name: str = "node_item_name_confirm"
 
@@ -60,7 +59,6 @@ class NodeItemNameConfirm(NodeBase):
             history_content += content
         print(history_content)
         return history_content, message_id, original_query, session_id
-
     def llm_get_item_name_rewritten_query(self, history_content: str, original_query: str) -> tuple[list[Any], Any]:
         """
         调用大模型，结合会话上下文提取商品名称并重写用户query；处理LLM返回markdown格式JSON
@@ -75,9 +73,7 @@ class NodeItemNameConfirm(NodeBase):
             api_key=LLMConfig.openai_api_key,
             base_url=LLMConfig.openai_base_url,
             temperature=LLMConfig.llm_default_temperature
-
         )
-
         messages = [
             {"role": "system", "content": ITEM_NAME_EXTRACT_SYSTEM_PROMPT},
             {"role": "user",
@@ -243,7 +239,7 @@ class NodeItemNameConfirm(NodeBase):
             "message_id": message_id,
             "original_query": original_query,
             "answer": answer,
-            "item_names": item_names,
+            "item_names": final_item_names,
             "rewritten_query": rewritten_query,
             "history": get_recent_history_list(session_id, limit=10)
         }

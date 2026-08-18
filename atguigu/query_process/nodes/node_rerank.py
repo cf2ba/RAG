@@ -29,7 +29,7 @@ class NodeRerank(NodeBase):
     # 覆盖基类的 name 属性，标识节点名称
     name: str = "node_rerank"
 
-    def get_merge_chunks(self, state: QueryGraphState) -> list[dict[str, Any]]:
+    def get_merge_chunks(self, state):
         """
         合并多路召回文档并标准化字段格式
         合并本地RRF召回片段与网页搜索文档，将两套不同的字段结构统一为相同格式，
@@ -39,7 +39,7 @@ class NodeRerank(NodeBase):
         :return: list[dict[str, Any]] 统一格式后的文档列表，固定包含 title、content、url、source 字段
         """
         # 获取本地知识库经过RRF融合排序后的文档片段
-        rrf_chunks = state.get("rrf_chunks")
+        rrf_chunks = state.get("rrf_chunks") or []
         # 本地rrf_chunks单条结构示例：
         # {
         #     "item_name": "BrotherHAK180烫金机",
@@ -62,6 +62,9 @@ class NodeRerank(NodeBase):
         # }
 
         # 合并两路文档，形成统一待处理列表
+        # 防御性处理：上游节点失败时 rrf_chunks / web_search_docs 可能为 None，统一归一为列表
+        rrf_chunks = rrf_chunks or []
+        web_search_docs = web_search_docs or []
         merge_docs = rrf_chunks + web_search_docs
 
         # 字段格式统一：适配两路数据的不同字段名，输出标准化结构
@@ -100,7 +103,7 @@ class NodeRerank(NodeBase):
         # 调用重排序工具，传入查询与文本列表，limit设为文档总数以返回全部打分结果
         res = text_rerank(query=rewritten_query, texts=texts, limit=len(merge_docs))
         # logger.info(json_format_tool(res))
-        print(res)
+        # print(res)
 
         # 将重排模型返回的分数按索引回填到原文档列表中
         for item in res:
@@ -110,10 +113,10 @@ class NodeRerank(NodeBase):
         rerank_merge_docs = sorted(merge_docs, key=lambda x: x["score"], reverse=True)
 
         # 排序后的文档列表分数呈现断崖式分布，交由断崖检测模块做动态截断
-        logger.info(json_format_tool(rerank_merge_docs))
+        # logger.info(json_format_tool(rerank_merge_docs))
         return rerank_merge_docs
 
-    def cliff_detection(self, merge_docs: list[dict[str, Any]], rerank_merge_docs: list[dict[str, Any]]):
+    def cliff_detection(self, rerank_merge_docs):
         """
         断崖检测算法：自适应动态截断文档列表
         核心思想：重排后的文档分数通常呈现"前几条高分高度相关，后续分数骤降且相关性低"的断崖分布；
@@ -137,12 +140,12 @@ class NodeRerank(NodeBase):
         # 最小保留文档数：硬下限，确保回答有足够信息支撑
         RERANK_MIN_TOPK: int = 3
         # 相对断崖阈值：相邻文档分数的相对跌幅比例，超过则判定为断崖
-        RERANK_GAP_RATIO: float = 0.25
+        RERANK_GAP_RATIO: float = 0.35
         # 绝对断崖阈值：相邻文档分数的绝对差值，超过则判定为断崖
         RERANK_GAP_ABS: float = 0.25
 
         # 根据实际文档总数动态调整本次的最大、最小保留数，防止数组越界
-        use_max_topk = min(RERANK_MAX_TOPK, len(merge_docs))
+        use_max_topk = min(RERANK_MAX_TOPK, len(rerank_merge_docs))
         use_min_topk = min(RERANK_MIN_TOPK, use_max_topk)
 
         # 从最小保留数的位置开始遍历，查找第一个分数断崖点
@@ -178,7 +181,7 @@ class NodeRerank(NodeBase):
         rerank_merge_docs = self.get_rerank_chunks(merge_docs, state)
 
         # 步骤3：断崖检测，动态截取高质量文档
-        reranked_docs = self.cliff_detection(merge_docs, rerank_merge_docs)
+        reranked_docs = self.cliff_detection(rerank_merge_docs)
 
         # 将最终结果写入状态并返回
         return {

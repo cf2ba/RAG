@@ -1,6 +1,7 @@
 from abc import ABC, abstractclassmethod
 
 from atguigu.tool.logger import logger
+from atguigu.tool.task_utils import add_running_task, get_task_info, add_done_task, put_data
 
 
 class NodeBase(ABC):
@@ -17,8 +18,21 @@ class NodeBase(ABC):
     # 自动调用call方法的内容
     def __call__(self, state):
         try:
+
             logger.info(f"{self.name}开始执行了")
+            task_id = state.get("task_id")
+            add_running_task(task_id,self.name)
+            # q.put({"event":"progress","data":get_task_info(task_id)})
+            put_data(task_id,event="progress",data=get_task_info(task_id))
+
+
+
+
             result = self.process(state)
+
+            add_done_task(task_id, self.name)
+            put_data(task_id,event="progress",data=get_task_info(task_id))
+            # q.put({"event": "progress", "data": get_task_info(task_id)})
             logger.info(f"{self.name}执行结束")
             return result
         except Exception as e:

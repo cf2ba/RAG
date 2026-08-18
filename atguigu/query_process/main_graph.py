@@ -40,7 +40,7 @@ class MainGraph:
         self.builder.add_conditional_edges(NodeItemNameConfirm.name,self.after_entry_router)
         self.builder.add_edge(NodeSearchEmbedding.name,NodeRrf.name)
         self.builder.add_edge(NodeSearchEmbeddingHyde.name,NodeRrf.name)
-        self.builder.add_edge(NodeWebSearchMcp.name,NodeRrf.name)
+        self.builder.add_edge(NodeWebSearchMcp.name,NodeRerank.name)
         self.builder.add_edge(NodeRrf.name,NodeRerank.name)
         self.builder.add_edge(NodeRerank.name,NodeAnswerOutput.name)
     def run(self,state):

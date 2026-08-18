@@ -25,23 +25,23 @@ class NodeRrf(NodeBase):
         """
 
         # 从状态中获取两路向量召回结果
-        embeddings_chunks = state.get("embeddings_chunks")
-        hyde_embeddings_chunks = state.get("hyde_embeddings_chunks")
+        embedding_chunks = state.get("embedding_chunks")
+        hyde_embedding_chunks = state.get("hyde_embedding_chunks")
 
         # 合法性校验：原始向量召回结果不能为空
-        if not embeddings_chunks:
+        if not embedding_chunks:
             logger.error("向量检索结果未上传")
             raise Exception("向量检索结果未上传")
         # 合法性校验：HyDE假设检索结果不能为空
-        if not hyde_embeddings_chunks:
+        if not hyde_embedding_chunks:
             logger.error("假设检索结果未上传")
             raise Exception("假设检索结果未上传")
 
         # 配置多路召回通路：(召回文档列表, 通路权重)
         # 后续新增Web召回等通路直接在此追加元组即可扩展
         weight_embedding = [
-            (embeddings_chunks, 1),
-            (hyde_embeddings_chunks, 1)
+            (embedding_chunks, 1),
+            (hyde_embedding_chunks, 1)
         ]
 
         # 字典用于存储全部文档，key=文档唯一id，value=文档完整对象，实现文档去重 + 分数累加
@@ -54,7 +54,7 @@ class NodeRrf(NodeBase):
                 chunk_id = chunk.get("id")
                 # RRF核心计算公式：原始相似度分数 + weight / (rank + k)
                 # k=60 为平滑常数，行业通用取值，降低排名靠后文档的权重影响
-                chunk_score = chunk.get("score") + weight / (idx + 60)
+                chunk_score = weight / (idx + 60)
 
                 # 判断文档是否在其它通路已经出现
                 if chunk_id in final_chunks_dict.keys():
@@ -82,7 +82,7 @@ if __name__ == '__main__':
     node = NodeRrf()
     # 模拟工作流state数据，两路召回测试数据
     mock_state = {
-        "embeddings_chunks": [
+        "embedding_chunks": [
             {
                 "item_name": "BrotherHAK180烫金机",
                 "content": "## HAK 180 烫金机\n\n产品安全手册（简体中文）\n\n感谢您购买 HAK 180 烫金机。\n\n在使用本设备之前，请先阅读本手册，包括所有预防措施。阅读本手册后，请妥善保管。\n\n有关使用本设备的更多信息，请参阅使用说明书，其可在兄弟 (中国)商业有限公司技术服务支持网站 http://www.95105369.com/Web/Manuals.aspx 上找到。建议您先通读使用说明书，再使用本设备。\n\n如需获得常见问题解答、故障排除和说明书，请访问\n\nhttp://www.95105369.com。\n\n对于本设备所有者不遵守本指南中规定的说明操作而导致的损害，Brother 不承担任何责任。",
@@ -174,7 +174,7 @@ if __name__ == '__main__':
                 "source": "local"
             }
         ],
-        "hyde_embeddings_chunks": [
+        "hyde_embedding_chunks": [
             {
                 "id": 468219061222798546,
                 "file_title": "hak180产品安全手册",

@@ -185,8 +185,8 @@ class NodeDocumentSplit(NodeBase):
         logger.info(json_format_tool(final_section_list))
 
         # 将所有细粒度切片持久化为JSON文件，用于调试、备份
-        with open(md_path_obj.parent / f"chunks.json", 'w', encoding='utf-8') as f:
-            f.write(json_format_tool(final_section_list))
+        # with open(md_path_obj.parent / f"chunks.json", 'w', encoding='utf-8') as f:
+        #     f.write(json_format_tool(final_section_list))
         return final_section_list
 
     def process(self, state: ImportGraphState):

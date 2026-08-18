@@ -37,7 +37,7 @@ def get_recent_history_list(session_id,limit=10):
 
 
 #增或者改历史记录  有id是修改  无id是添加
-def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=None,ts=None,_id=None):
+def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=None,ts=None,_id=None,image_urls=None):
     collection=get_mongo_collection()
     #全量更新和增量更新
     #为什么人在封装数据库增和改时全部合二为一写出一个方法或函数
@@ -51,6 +51,7 @@ def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=N
             "text": text,
             "rewritten_query": rewritten_query,
             "item_names": item_names,
+            "image_urls" :image_urls,
             "ts": ts or int(time.time())
         }
         collection.update_one({"_id":_id},{"$set":data})
@@ -64,6 +65,7 @@ def add_or_update_history(session_id,role,text,rewritten_query=None,item_names=N
             "text": text,
             "rewritten_query": rewritten_query,
             "item_names": item_names,
+            "image_urls": image_urls,
             "ts": ts or int(time.time())
         }
         result = collection.insert_one(data)

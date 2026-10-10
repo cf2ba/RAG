@@ -202,6 +202,16 @@ class NodeDocumentSplit(NodeBase):
         section_list = self.get_section_list(md_content, file_title)
         # 步骤3：章节精细化分片，长文本切割、表格保护、短文本直通，落地JSON备份
         final_section_list = self.get_final_section_list(file_title, section_list, md_path_obj)
+        # 步骤4：将旅游元数据（内容类型/城市/文档名/主题/来源链接）附加到每个切片
+        metadata = {
+            "content_type": state.get("content_type", ""),
+            "region": state.get("region", ""),
+            "doc_name": state.get("doc_name", ""),
+            "topics": state.get("topics", ""),
+            "source_url": state.get("source_url", ""),
+        }
+        for chunk in final_section_list:
+            chunk.update(metadata)
         # 将切片结果写入graph状态返回
         return {
             "chunks": final_section_list

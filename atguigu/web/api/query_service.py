@@ -10,6 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 
 from atguigu.query_process.main_graph import MainGraph
+from atguigu.tool.logger import logger
 from atguigu.tool.mongodb import get_recent_history_list, clear_history
 from atguigu.tool.task_utils import update_task_status, TASK_STATUS_PROCESSING, get_task_info, TASK_STATUS_COMPLETED, \
     TASK_STATUS_FAILED, create_queue, put_data, queue_dict
@@ -83,22 +84,26 @@ def run_main_graph(task_id,original_query,session_id):
         update_task_status(task_id,TASK_STATUS_PROCESSING)
         #放到队列中，sse后期可以从队列中取出更新的数据状态，然后推送给前端
         # q.put({"event":"progress","data":get_task_info(task_id)})
-        put_data(task_id,event="progerss",data=get_task_info(task_id))
+        put_data(task_id,event="progress",data=get_task_info(task_id))
         MainGraph.create_run(init_state)
         update_task_status(task_id, TASK_STATUS_COMPLETED)
         # q.put({"event": "progress", "data": get_task_info(task_id)})
         put_data(task_id,event="progress",data=get_task_info(task_id))
 
     except Exception as e:
-        from atguigu.tool.logger import logger
-        logger.info(f"maingraph{task_id}执行失败")
+        # 记录完整堆栈到服务端日志，便于排查
+        logger.exception(f"maingraph{task_id}执行失败: {e}")
         update_task_status(task_id, TASK_STATUS_FAILED)
-        # q.put({"event": "error", "data": get_task_info(task_id)})
-        put_data(task_id,event="error",data=get_task_info(task_id))
-        raise e
+        # 关键：把真实错误信息放进 task_error 事件。
+        # 不要用保留名 "error"——它与 EventSource 的连接错误事件同名，前端无法区分。
+        error_info = get_task_info(task_id)
+        error_info["error"] = str(e)
+        put_data(task_id, event="task_error", data=error_info)
+        # 不再 re-raise：后台任务里抛异常只会产生额外噪音，end 哨兵已由 finally 发送
     finally:
-        # 无论成功或失败都写入结束哨兵，通知SSE生成器终止，避免生成器无限阻塞导致连接被客户端强制关闭
-        put_data(task_id,event="end",data={})
+        # 无论成功或失败都写入结束哨兵（携带最终状态），通知SSE生成器终止，
+        # 避免生成器无限阻塞导致连接被客户端强制关闭
+        put_data(task_id, event="end", data=get_task_info(task_id))
 
 #第四步:查询接口
 
@@ -132,8 +137,8 @@ def generate_stream(task_id):
         # 收到结束哨兵则终止流，让StreamingResponse正常结束，避免生成器无限阻塞
         if item.get("event") == "end":
             break
-        yield f"event:{item.get("event")}\n"
-        yield f"data:{json.dumps(item.get("data"),ensure_ascii=False)}\n\n"
+        yield f"event:{item.get('event')}\n"
+        yield f"data:{json.dumps(item.get('data'),ensure_ascii=False)}\n\n"
 #流失请求对应接口
 @app.get("/stream/{task_id}")
 async def stream(task_id:str=Path(...,description="任务ID")):

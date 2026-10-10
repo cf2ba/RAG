@@ -6,13 +6,13 @@ from typing import Any
 from langchain.chat_models import init_chat_model
 from transformers.integrations import rewrite_logs
 
-from atguigu.config.config import LLMConfig, MilvusConfig
+from atguigu.config.config import LLMConfig
 from atguigu.query_process.base import NodeBase
 from atguigu.query_process.state import QueryGraphState
 from atguigu.tool.bgem3_client_tool import get_bge_m3_embedding
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.milvus_client_tool import milvus_client, get_milvus_client, create_reqs, search_hybrid
+from atguigu.tool.milvus_client_tool import get_milvus_client, create_reqs, search_hybrid, get_item_name_collection
 from atguigu.tool.mongodb import add_or_update_history, get_recent_history_list, update_item_names_and_query
 from atguigu.tool.prompt import ITEM_NAME_EXTRACT_SYSTEM_PROMPT, ITEM_NAME_EXTRACT_TEMPLATE
 
@@ -30,6 +30,11 @@ class NodeItemNameConfirm(NodeBase):
     """
     # 覆盖基类的 name 属性，标识节点名称
     name: str = "node_item_name_confirm"
+
+    # 主体名称对齐阈值：混合检索返回的相似度分数
+    # >= CONFIRM 直接确认；OPTION~CONFIRM 弹出候选让用户选；< OPTION 视为无法识别
+    CONFIRM_SCORE_THRESHOLD = 0.8   # 原 0.85 过严，导致“直接确认”永远触发不了
+    OPTION_SCORE_THRESHOLD = 0.5    # 原 0.6 略严，容易误判为“无法识别”
 
     def get_history_contetn(self, state: QueryGraphState) -> tuple[str, str, str, Any]:
         """
@@ -59,12 +64,12 @@ class NodeItemNameConfirm(NodeBase):
             history_content += content
         print(history_content)
         return history_content, message_id, original_query, session_id
-    def llm_get_item_name_rewritten_query(self, history_content: str, original_query: str) -> tuple[list[Any], Any]:
+    def llm_get_item_name_rewritten_query(self, history_content: str, original_query: str) -> tuple[list[Any], list[Any], Any]:
         """
-        调用大模型，结合会话上下文提取商品名称并重写用户query；处理LLM返回markdown格式JSON
+        调用大模型，结合会话上下文提取目的地/景区/线路名称、内容类型并重写用户query；处理LLM返回markdown格式JSON
         :param history_content:拼接好的会话上下文
         :param original_query:用户原始提问
-        :return: item_names:LLM识别出的商品名称列表, rewritten_query:大模型优化重写后的查询语句
+        :return: item_names:LLM识别出的目的地/景区/线路列表, content_types:内容类型列表, rewritten_query:大模型优化重写后的查询语句
         """
         # 整理完数据，准备调用大模型识别主题和问题重写
         llm = init_chat_model(
@@ -89,6 +94,7 @@ class NodeItemNameConfirm(NodeBase):
         # 把json转化为字典（反序列化）取出item_names，判断如果有值，对item_names去除一下空白
         res_dict = json.loads(res_json)
         item_names = res_dict.get("item_names")
+        content_types = res_dict.get("content_types")
         rewritten_query = res_dict.get("rewritten_query")
         if item_names:
             item_names = [
@@ -97,9 +103,16 @@ class NodeItemNameConfirm(NodeBase):
         else:
             item_names = []
 
+        if content_types:
+            content_types = [
+                content_type.replace(" ", "").replace("\n", "").replace("\t", "")
+                for content_type in content_types]
+        else:
+            content_types = []
+
         if not rewritten_query:
             rewritten_query = original_query
-        return item_names, rewritten_query
+        return item_names, content_types, rewritten_query
 
     def get_embedding_hybrid_score(self, item_names: list[Any]) -> list[Any]:
         """
@@ -110,7 +123,7 @@ class NodeItemNameConfirm(NodeBase):
         # 对整个item_names进行向量化，再对每个item_name进行混合搜索
         embeddings = get_bge_m3_embedding(item_names)
 
-        collection_name = MilvusConfig.item_name_collection
+        collection_name = get_item_name_collection()
 
         final_search_item_names = []
         for idx, item_name in enumerate(item_names):
@@ -157,15 +170,25 @@ class NodeItemNameConfirm(NodeBase):
         """
         # 找分数最高的进行对齐，通过分数确认最终确认的主题或者候选的主题
         # 根据搜索置信度（score）
+        # 打印每一条检索结果的分数，便于排查“为什么总是问哪一个/无法识别”
+        for item in final_search_item_names:
+            logger.info(
+                f"主体对齐 score={item.get('score')} 用户说[{item.get('original_item_name')}] "
+                f"库内命中[{item.get('search_item_name')}]"
+            )
+
         confirm_item_names = [
             item.get("search_item_name")
             for item in final_search_item_names
-            if item.get("score") >= 0.85
+            if item.get("score") >= self.CONFIRM_SCORE_THRESHOLD
+            # 用户（或LLM）说出的名字与库内名字完全一致时，直接确认，
+            # 不再受分数阈值卡住，避免“选完还问去哪”的死循环
+            or item.get("original_item_name") == item.get("search_item_name")
         ]
         option_item_names = [
             item.get("search_item_name")
             for item in final_search_item_names
-            if item.get("score") >= 0.6
+            if item.get("score") >= self.OPTION_SCORE_THRESHOLD
         ]
 
         if confirm_item_names:
@@ -173,10 +196,10 @@ class NodeItemNameConfirm(NodeBase):
             answer = ''
         elif option_item_names:
             final_item_names = []
-            answer = f"请确认你要咨询的商品是这些的哪一个？{','.join(option_item_names)}"
+            answer = f"请确认你要咨询的目的地/景区是这些的哪一个？{','.join(option_item_names)}"
         else:
             final_item_names = []
-            answer = f"对不起，无法识别你要咨询的商品，请重写提问"
+            answer = f"对不起，无法识别你要咨询的目的地/景区，请重新提问"
         return answer, final_item_names
 
     def handler_history(self, answer: str, final_item_names: list[Any], item_names: list[Any], message_id: str | Any,
@@ -216,8 +239,8 @@ class NodeItemNameConfirm(NodeBase):
         """
         # 第一大步：获取state当中的session_id和original_query，然后根据sessionid获取最近的10条记录整理成大串
         history_content, message_id, original_query, session_id = self.get_history_contetn(state)
-        # 第二大步：根据大串调用大模型进行意图识别，获取到意图识别出来的item_names和rewritten_query
-        item_names, rewritten_query = self.llm_get_item_name_rewritten_query(history_content, original_query)
+        # 第二大步：根据大串调用大模型进行意图识别，获取到意图识别出来的item_names（目的地/景区/线路）、content_types和rewritten_query
+        item_names, content_types, rewritten_query = self.llm_get_item_name_rewritten_query(history_content, original_query)
 
         #拿到了item_names和rewritten_query，接下来需要把item_name进行向量化
         #与milvus中的item_name表中进行混合检索，
@@ -240,6 +263,7 @@ class NodeItemNameConfirm(NodeBase):
             "original_query": original_query,
             "answer": answer,
             "item_names": final_item_names,
+            "content_types": content_types,
             "rewritten_query": rewritten_query,
             "history": get_recent_history_list(session_id, limit=10)
         }

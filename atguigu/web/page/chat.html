@@ -797,6 +797,7 @@
 
             const es = new EventSource(`${API_BASE}/stream/${task_id}`);
             let rawAnswerText = '';
+            let finished = false;   // 是否已收到 final/task_error 正常结束，用于区分“正常关闭”与“连接异常中断”
 
             es.addEventListener('progress', (e) => {
                 try {
@@ -863,25 +864,43 @@
                     renderAnswerWithImages(answerEl, finalText, d.image_urls || []);
                 } catch (_) {
                 }
+                finished = true;
+                es.close();
+                sendBtn.disabled = false;
+            });
+
+            es.addEventListener('task_error', (e) => {
+                const typing = botMsgEl.querySelector('.typing');
+                if (typing) typing.remove();
+                const progress = botMsgEl.querySelector('details.progress');
+                if (progress) progress.removeAttribute('open');
+
+                let msg = '任务执行失败';
+                try {
+                    const d = JSON.parse(e.data || '{}');
+                    msg = d.error || msg;
+                } catch (_) {
+                }
+                rawAnswerText += `\n\n（错误：${msg}）`;
+                renderAnswerWithImages(answerEl, rawAnswerText, []);
+                finished = true;
                 es.close();
                 sendBtn.disabled = false;
             });
 
             es.addEventListener('error', (e) => {
+                // 已正常结束（收到 final/task_error）时，浏览器会在连接关闭后仍触发一次 error，
+                // 此时忽略，避免把正常结束误报成“SSE 连接中断”
+                if (finished) return;
+
                 const typing = botMsgEl.querySelector('.typing');
                 if (typing) typing.remove();
                 // 收起进度条
                 const progress = botMsgEl.querySelector('details.progress');
                 if (progress) progress.removeAttribute('open');
 
-                try {
-                    const msg = e && e.data ? (JSON.parse(e.data).error || 'SSE 连接中断/失败') : 'SSE 连接中断/失败';
-                    rawAnswerText += `\n\n（错误：${msg}）`;
-                    renderAnswerWithImages(answerEl, rawAnswerText, []);
-                } catch (_) {
-                    rawAnswerText += `\n\n（错误：SSE 连接中断/失败）`;
-                    renderAnswerWithImages(answerEl, rawAnswerText, []);
-                }
+                rawAnswerText += `\n\n（错误：SSE 连接中断/失败，请查看服务端日志）`;
+                renderAnswerWithImages(answerEl, rawAnswerText, []);
                 es.close();
                 sendBtn.disabled = false;
             });

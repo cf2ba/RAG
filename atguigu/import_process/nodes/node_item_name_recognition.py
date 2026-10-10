@@ -5,13 +5,13 @@ from typing import Any
 from langchain.chat_models import init_chat_model
 from pymilvus import DataType, MilvusClient
 
-from atguigu.config.config import LLMConfig, MilvusConfig
+from atguigu.config.config import LLMConfig
 from atguigu.import_process.base import NodeBase
 from atguigu.import_process.state import ImportGraphState
 from atguigu.tool.bgem3_client_tool import get_bge_m3_embedding
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.milvus_client_tool import get_milvus_client
+from atguigu.tool.milvus_client_tool import get_milvus_client, get_item_name_collection, load_collection_safe, truncate_utf8
 from atguigu.tool.prompt import ITEM_NAME_SYSTEM_PROMPT, ITEM_NAME_USER_PROMPT_TEMPLATE
 
 
@@ -105,6 +105,10 @@ class NodeItemNameRecognition(NodeBase):
         # 清洗换行、空格、制表符，规整主体名称格式
         item_name = item_name.replace(" ", "").replace("\n", "").replace("\t", "")
         # print(item_name)
+        # 主体名过长说明 LLM 未按要求只返回名称，降级使用文档标题，避免写入超长脏数据
+        if len(item_name) > 50:
+            logger.warning(f"LLM主体名称过长({len(item_name)}字符)，降级使用文档标题")
+            item_name = file_title
         # 模型识别结果为空，降级使用文档标题
         if not item_name:
             logger.warning("LLM主体名称识别为空，使用文档标题兜底")
@@ -121,7 +125,7 @@ class NodeItemNameRecognition(NodeBase):
         if not milvus_client:
             logger.error("初始化milvus_client失败")
             raise Exception("初始化milvus_client失败")
-        collection_name = MilvusConfig.item_name_collection
+        collection_name = get_item_name_collection()
         # 集合不存在执行建表逻辑
         if not milvus_client.has_collection(collection_name):
             # 创建Schema，主键自增
@@ -133,11 +137,11 @@ class NodeItemNameRecognition(NodeBase):
             ).add_field(
                 field_name="item_name",
                 datatype=DataType.VARCHAR,
-                max_length=100
+                max_length=200
             ).add_field(
                 field_name="file_title",
                 datatype=DataType.VARCHAR,
-                max_length=100
+                max_length=200
             ).add_field(
                 field_name="dense_vector",
                 datatype=DataType.FLOAT_VECTOR,
@@ -187,8 +191,11 @@ class NodeItemNameRecognition(NodeBase):
         :param milvus_client: Milvus客户端实例
         :return: 全部回填item_name后的chunks数组
         """
-        # 加载集合，必须加载才能执行删除/插入操作
-        milvus_client.load_collection(collection_name=collection_name)
+        # 加载集合，必须加载才能执行删除/插入操作（幂等加载，避免二次 load 报错）
+        load_collection_safe(milvus_client, collection_name)
+        # 主体名与标题按 schema 上限截断（按 UTF-8 字节，中文占3字节），防止超长写入失败
+        item_name = truncate_utf8(item_name, 200)
+        file_title = truncate_utf8(file_title, 200)
         # SQL注入防护：转义反斜杠、单引号、双引号，防止filter语法报错
         safe_item_name = item_name.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
         filter_str = f"item_name=='{safe_item_name}'"
@@ -223,10 +230,17 @@ class NodeItemNameRecognition(NodeBase):
         :return: 更新后的状态字典：item_name主体名、带标签的chunks
         """
         chunks, file_title = self.get_chunks(state)
-        # 截取切片拼接LLM上下文
-        content_str = self.get_chunks_content(chunks, file_title)
-        # LLM识别产品/主体名称
-        item_name = self.get_item_name(content_str, file_title)
+        # 元数据优先：已提供地区/城市/目的地或文档名时，直接用元数据作为主体名，无需 LLM 猜名
+        region = state.get("region", "")
+        doc_name = state.get("doc_name", "")
+        if region or doc_name:
+            item_name = region or doc_name
+        else:
+            # 无元数据时回退到 LLM 主体识别（兼容旧商品知识库）
+            content_str = self.get_chunks_content(chunks, file_title)
+            item_name = self.get_item_name(content_str, file_title)
+        # 截断到 Milvus VARCHAR(200) 上限（按 UTF-8 字节，中文占3字节），防止超长主体名写入失败
+        item_name = truncate_utf8((item_name or "").strip(), 200)
         # 获取Milvus集合与客户端并创建表
         collection_name, milvus_client = self.get_collection()
         # 向量入库+chunks字段回填

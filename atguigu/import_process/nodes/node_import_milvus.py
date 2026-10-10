@@ -5,15 +5,27 @@ from typing import Any
 
 from pymilvus import DataType, MilvusClient
 
-from atguigu.config.config import MilvusConfig
 from atguigu.import_process.base import NodeBase
 from atguigu.import_process.state import ImportGraphState
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.milvus_client_tool import get_milvus_client
+from atguigu.tool.milvus_client_tool import get_milvus_client, get_chunks_collection, load_collection_safe, truncate_utf8
 
 
 # from langsmith.schemas import DataType
+
+# Milvus VARCHAR 字段 -> 最大长度（与 create_collection 建表 schema 保持一致）
+_VARCHAR_MAX_LENGTHS = {
+    "file_title": 200,
+    "title": 100,
+    "content": 5000,
+    "item_name": 200,
+    "content_type": 50,
+    "region": 100,
+    "doc_name": 100,
+    "topics": 500,
+    "source_url": 500,
+}
 
 
 class NodeImportMilvus(NodeBase):
@@ -32,7 +44,7 @@ class NodeImportMilvus(NodeBase):
         return chunks, dense_dim, file_title
 
     def create_collection(self, dense_dim) -> tuple[MilvusClient, str | None]:
-        collection_name = MilvusConfig.chunks_collection
+        collection_name = get_chunks_collection()
         milvus_client = get_milvus_client()
         if not milvus_client:
             logger.error("milvus_client客户端初始化失败")
@@ -46,7 +58,7 @@ class NodeImportMilvus(NodeBase):
             ).add_field(
                 field_name="file_title",
                 datatype=DataType.VARCHAR,
-                max_length=100
+                max_length=200
             ).add_field(
                 field_name="title",
                 datatype=DataType.VARCHAR,
@@ -58,7 +70,27 @@ class NodeImportMilvus(NodeBase):
             ).add_field(
                 field_name="item_name",
                 datatype=DataType.VARCHAR,
+                max_length=200
+            ).add_field(
+                field_name="content_type",
+                datatype=DataType.VARCHAR,
+                max_length=50
+            ).add_field(
+                field_name="region",
+                datatype=DataType.VARCHAR,
                 max_length=100
+            ).add_field(
+                field_name="doc_name",
+                datatype=DataType.VARCHAR,
+                max_length=100
+            ).add_field(
+                field_name="topics",
+                datatype=DataType.VARCHAR,
+                max_length=500
+            ).add_field(
+                field_name="source_url",
+                datatype=DataType.VARCHAR,
+                max_length=500
             ).add_field(
                 field_name="part",
                 datatype=DataType.INT64
@@ -98,12 +130,19 @@ class NodeImportMilvus(NodeBase):
     def insert_reback(self, chunks: int, collection_name: MilvusClient, file_title: list[Any],
                       milvus_client: str | None) -> \
             dict[str, int]:
-        # 删除数据先加载表
-        milvus_client.load_collection(collection_name=collection_name)
-        # 幂等性删除file_title重复的记录
+        # 删除数据先加载表（幂等加载，避免二次 load 报错）
+        load_collection_safe(milvus_client, collection_name)
+        # 幂等性删除file_title重复的记录（先截断，保证与入库值一致）
+        file_title = truncate_utf8(file_title, 200)
         file_title = file_title.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
         filter_str = f"file_title == '{file_title}'"
         milvus_client.delete(collection_name=collection_name, filter=filter_str)
+        # 插入前按 schema 上限截断 VARCHAR 字段（按 UTF-8 字节，中文占3字节），防止超长写入失败
+        for chunk in chunks:
+            for field, max_len in _VARCHAR_MAX_LENGTHS.items():
+                val = chunk.get(field)
+                if isinstance(val, str):
+                    chunk[field] = truncate_utf8(val, max_len)
         # 插入数据
         res = milvus_client.insert(
             collection_name=collection_name,

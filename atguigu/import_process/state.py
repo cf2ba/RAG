@@ -24,5 +24,12 @@ class ImportGraphState(TypedDict):
     chunks: list    # 切片列表
     item_name:str # 识别主体的名称（例如：万用表）
 
+    # 元数据（旅游知识库，导入时随文件一并传入，最终落到每个切片）
+    content_type: str   # 内容类型：景点介绍/线路推荐/酒店信息/美食推荐/交通指南/文化民俗
+    region: str         # 地区/城市/目的地
+    doc_name: str       # 文档/线路/景点/酒店名称
+    topics: str         # 主题关键词（逗号分隔）
+    source_url: str     # 来源路径或资源链接
+
     # 数据库关联
     embeddings_content: list # 包含向量数的列表 ，准备写入 Milvus

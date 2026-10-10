@@ -1,13 +1,12 @@
 # atguigu/query_process/nodes/node_search_embedding.py
 import json
 
-from atguigu.config.config import MilvusConfig
 from atguigu.query_process.base import NodeBase
 from atguigu.query_process.state import QueryGraphState
 from atguigu.tool.bgem3_client_tool import get_bge_m3_embedding
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.milvus_client_tool import create_reqs, search_hybrid
+from atguigu.tool.milvus_client_tool import create_reqs, search_hybrid, get_chunks_collection
 
 
 class NodeSearchEmbedding(NodeBase):
@@ -46,16 +45,20 @@ class NodeSearchEmbedding(NodeBase):
         # 3. 调用BGE-M3服务，生成查询文本稠密向量、稀疏向量
         embeddings = get_bge_m3_embedding([rewritten_query])
         # 读取配置，确定Milvus目标文档块集合名称
-        collection_name = MilvusConfig.chunks_collection
+        collection_name = get_chunks_collection()
 
         # 4. 转义item_name特殊字符，防止构建expr表达式时引号、反斜杠语法报错
         # item_names = [
-        #     item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+        #     item.replace("\\\\", "\\\\\\\\").replace("'", "\\\\'").replace('"', '\\\\"')
         #     for item in item_names
         # ]
         # 构建Milvus标量过滤表达式：仅检索匹配item_name的文档块
         # Milvus IN 语法要求列表使用标准json字符串格式
         expr = f"item_name in {json.dumps(item_names,ensure_ascii=False)}"
+        # 附加内容类型过滤（景点介绍/线路推荐/酒店信息/美食推荐/交通指南等）
+        content_types = state.get("content_types") or []
+        if content_types:
+            expr += f" and content_type in {json.dumps(content_types, ensure_ascii=False)}"
 
         # 5. 组装混合检索请求参数
         reqs = create_reqs(
@@ -72,7 +75,7 @@ class NodeSearchEmbedding(NodeBase):
             reqs=reqs,
             ranker=(0.8, 0.2),       # 融合权重：稠密0.8，稀疏0.2
             limit=10,                # 混合排序后最终返回top10结果
-            output_fields=["content", "id", "file_title", "title", "item_name"]  # 需要返回的文档元数据字段
+            output_fields=["content", "id", "file_title", "title", "item_name", "region", "content_type", "doc_name", "topics", "source_url"]  # 需要返回的文档元数据字段
         )
         # 控制台打印原始检索结果，调试使用
         print(res)

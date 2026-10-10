@@ -12,7 +12,6 @@
             display: flex;
             justify-content: center;
             min-height: 100vh;
-            /* 科技感背景 */
             background-color: #0f172a;
             background-image: radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
             radial-gradient(circle at 85% 30%, rgba(129, 140, 248, 0.08) 0%, transparent 50%),
@@ -112,7 +111,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 12px;
+            margin-bottom: 4px;
         }
 
         .file-name {
@@ -126,6 +125,19 @@
             color: #64748b;
         }
 
+        .file-meta {
+            font-size: 13px;
+            color: #94a3b8;
+            margin: 4px 0 8px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 16px;
+            background: rgba(15, 23, 42, 0.3);
+            padding: 6px 12px;
+            border-radius: 8px;
+            border-left: 3px solid rgba(56, 189, 248, 0.3);
+        }
+
         .status-badge {
             padding: 6px 14px;
             border-radius: 20px;
@@ -136,6 +148,7 @@
             text-align: center;
             letter-spacing: 0.5px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
         }
 
         .status-uploading {
@@ -257,7 +270,6 @@
             position: relative;
         }
 
-        /* 时间线竖线 */
         .log-list::before {
             content: "";
             position: absolute;
@@ -302,7 +314,6 @@
             background: rgba(255, 255, 255, 0.03);
         }
 
-        /* 时间线节点圆点 */
         .log-list li::before {
             content: "";
             position: absolute;
@@ -376,6 +387,8 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* 已删除 .metadata-form 样式 */
     </style>
 </head>
 <body>
@@ -386,7 +399,7 @@
     <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
         <div class="upload-icon">☁️</div>
         <div class="upload-text">点击或拖拽文件到此处 (PDF/MD)</div>
-        <input type="file" id="fileInput" class="file-input"  accept=".pdf,.md">
+        <input type="file" id="fileInput" class="file-input" accept=".pdf,.md">
     </div>
 
     <div id="fileList" class="file-list">
@@ -398,7 +411,6 @@
     const fileInput = document.getElementById('fileInput');
     const fileList = document.getElementById('fileList');
 
-    // 模拟后端API地址
     const API_BASE = 'http://127.0.0.1:8000';
 
     dropZone.addEventListener('dragover', (e) => {
@@ -447,9 +459,7 @@
     }
 
     async function uploadFile(file) {
-        // === 核心逻辑优化：动态判断总节点数 ===
         const isPDF = file.name.toLowerCase().endsWith('.pdf');
-        // PDF 需要 9 步（含上传），MD 跳过 pdf_to_md 需要 8 步
         const totalNodes = isPDF ? 8 : 7;
 
         const id = 'file-' + Math.random().toString(36).substr(2, 8);
@@ -460,6 +470,7 @@
                         <span class="file-name">${file.name}</span>
                         <span class="file-size">${(file.size / 1024).toFixed(2)} KB</span>
                     </div>
+                    <div class="file-meta" id="${id}-meta">（无元数据）</div>
                     <div class="progress-wrapper">
                         <div class="progress-bar-container">
                             <div class="progress-bar"></div>
@@ -483,11 +494,11 @@
 
         const formData = new FormData();
         formData.append('file', file);
+        // 不再附加任何元数据字段，全部由后端自动识别
 
         try {
             progressWrapper.style.display = 'block';
 
-            // 使用动态的 totalNodes 计算基础上传进度
             const uploadPercentage = (1 / totalNodes) * 100;
             updateProgressUI(progressWrapper, Math.min(uploadPercentage, 10));
 
@@ -504,14 +515,25 @@
             if (!response.ok) throw new Error('Upload failed');
 
             const result = await response.json();
-            console.log(result)
             const taskId = result.task_id;
+
+            // 渲染后端返回的元数据（自动识别）
+            const meta = result.metadata || {};
+            const metaDiv = document.getElementById(`${id}-meta`);
+            if (metaDiv) {
+                const parts = [];
+                if (meta.content_type) parts.push(`📂 ${meta.content_type}`);
+                if (meta.region) parts.push(`📍 ${meta.region}`);
+                if (meta.doc_name) parts.push(`📝 ${meta.doc_name}`);
+                if (meta.topics) parts.push(`🏷️ ${meta.topics}`);
+                if (meta.source_url) parts.push(`🔗 ${meta.source_url}`);
+                metaDiv.innerHTML = parts.length ? parts.join(' | ') : '（无元数据）';
+            }
 
             updateProgressUI(progressWrapper, uploadPercentage);
             statusBadge.textContent = '处理中';
             statusBadge.className = 'status-badge status-processing';
 
-            // 把专属的 totalNodes 传给轮询函数
             pollStatus(taskId, itemEl, totalNodes);
 
         } catch (error) {
@@ -532,7 +554,6 @@
         return text;
     }
 
-    // 接收 totalNodes 参数计算最终百分比和渲染文案
     function formatDuration(seconds) {
         if (seconds < 60) {
             return seconds.toFixed(1) + 's';
@@ -550,7 +571,6 @@
         const running = Array.isArray(runningList) ? runningList : [];
         const durationMap = durations || {};
 
-        // === 进度计算逻辑 ===
         let currentPercentage = (done.length / totalNodes) * 100;
 
         if (running.length > 0) {
@@ -561,14 +581,12 @@
             currentPercentage = 95;
         }
 
-        // 计算总耗时
         let totalDuration = 0;
         for (const key in durationMap) {
             totalDuration += durationMap[key];
         }
         const totalDurationText = totalDuration > 0 ? ` | 总耗时: ${formatDuration(totalDuration)}` : '';
 
-        // 更新日志文案
         logSummary.textContent = `📋 运行日志 (已完成: ${done.length}, 进行中: ${running.length}, 共 ${totalNodes} 步${totalDurationText})`;
 
         logListEl.innerHTML = '';
@@ -581,7 +599,6 @@
             nameSpan.textContent = `${normalizeLogText(item)} 节点执行完成`;
             li.appendChild(nameSpan);
 
-            // 添加耗时标签
             if (durationMap[item] !== undefined) {
                 const durationSpan = document.createElement('span');
                 durationSpan.className = 'log-duration';
@@ -622,7 +639,6 @@
 
                 if (stopped) return;
 
-                // 传入 totalNodes 继续计算
                 const calculatedPercentage = renderLogsAndCalculateProgress(itemEl, data.done_list, data.running_list, totalNodes, data.durations);
 
                 if (data.status === 'completed') {

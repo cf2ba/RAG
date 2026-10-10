@@ -42,7 +42,7 @@ _NODE_NAME_TO_CN: Dict[str, str] = {
     "node_import_milvus": "导入向量库",
 
     # --- Query 流程节点---
-    "node_item_name_confirm": "确认问题产品",
+    "node_item_name_confirm": "确认目的地/主体",
     "node_answer_output": "生成答案",
     "node_rerank": "重排序",
     "node_rrf": "倒排融合",
@@ -176,7 +176,9 @@ def get_task_info(task_id: str):
         "status": get_task_status(task_id),
         "running_list": get_running_task_list(task_id),
         "done_list": get_done_task_list(task_id),
-        "durations": get_node_durations(task_id)
+        "durations": get_node_durations(task_id),
+        "error": get_task_result(task_id, "error"),
+        "traceback": get_task_result(task_id, "traceback")
     }
 queue_dict:Dict[str,Queue] = {}
 def create_queue(task_id:str):
@@ -185,14 +187,20 @@ def create_queue(task_id:str):
     return queue_dict[task_id]
 
 def put_data(task_id,event,data):
-    while not queue_dict.get(task_id):
-        time.sleep(1)
+    # while not queue_dict.get(task_id):
+    #     time.sleep(1)
+        # 队列只在 run_main_graph 里通过 create_queue(task_id) 创建。
+    # 单节点调试(__main__)时没有 task_id / 没有创建队列，若这里无限等待会永久阻塞，
+    # 因此改为"无队列则直接跳过"，既不影响生产流程(队列已先行创建)，也避免调试卡死。
+
     q = queue_dict.get(task_id)
+    if not q:
+        return
     q.put({"event":event,"data":data})
 
 def get_data(task_id,event,data):
-    while not queue_dict.get(task_id):
-        time.sleep(1)
+    # while not queue_dict.get(task_id):
+    #     time.sleep(1)
     q = queue_dict.get(task_id)
     return q.get()
 

@@ -28,8 +28,8 @@ class NodeBase(ABC):
             logger.info(f"{self.name}执行结束")
             add_done_task(task_id, self.name)
             end_time = time.time()
-            add_node_duration(task_id,end_time-start_time)
+            add_node_duration(task_id,self.name,end_time-start_time)
             return result
         except Exception as e:
-            logger.error(f"{self.name}执行失败")
+            logger.error(f"{self.name}执行失败{e}")
             raise

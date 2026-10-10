@@ -24,7 +24,7 @@ class NodeEntry(NodeBase):
             logger.error("入口节点必须传入文件路径")
             raise ValueError("入口节点必须传入文件路径")
         #文件前缀
-        fiel_title = local_file_path_obj.stem
+        file_title = local_file_path_obj.stem
         # print(file_title)
         #文件后缀
         suffix = local_file_path_obj.suffix
@@ -35,13 +35,13 @@ class NodeEntry(NodeBase):
 			# 如果是其他，抛异常
         if suffix.lower() == '.md':
             return {
-                "file_title":fiel_title,
+                "file_title":file_title,
                 "md_path":str(local_file_path_obj),
                 "is_md_read_enabled":True,
             }
         elif suffix.lower() == '.pdf':
             return{
-                "file_title":fiel_title,
+                "file_title":file_title,
                 "pdf_path":str(local_file_path_obj),
                 "is_pdf_read_enabled":True,
             }

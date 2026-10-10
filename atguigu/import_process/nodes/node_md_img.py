@@ -291,7 +291,9 @@ class NodeMdImg(NodeBase):
         new_md_path_obj,md_content  = self.replace_md_image(image_with_summary_and_url_list,md_path_obj,md_content)
         return {
             "md_content":md_content,
-            "md_path":str(md_path_obj)
+            # 必须返回替换图片链接后的 _new.md 路径，否则下游文档切分节点会重读原文件，
+            # 导致存入 Milvus 的 content 仍是相对路径 images/xxx.jpg，前端无法展示图片
+            "md_path":str(new_md_path_obj)
         }
 
 

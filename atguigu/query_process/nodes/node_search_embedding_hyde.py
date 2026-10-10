@@ -2,13 +2,13 @@
 import json
 from langchain.chat_models import init_chat_model
 
-from atguigu.config.config import LLMConfig, MilvusConfig
+from atguigu.config.config import LLMConfig
 from atguigu.query_process.base import NodeBase
 from atguigu.query_process.state import QueryGraphState
 from atguigu.tool.bgem3_client_tool import get_bge_m3_embedding
 from atguigu.tool.json_format_tool import json_format_tool
 from atguigu.tool.logger import logger
-from atguigu.tool.milvus_client_tool import create_reqs, search_hybrid
+from atguigu.tool.milvus_client_tool import create_reqs, search_hybrid, get_chunks_collection
 from atguigu.tool.prompt import HYDE_PROMPT
 
 
@@ -73,7 +73,7 @@ class NodeSearchEmbeddingHyde(NodeBase):
         # 4. 调用BGE-M3服务，生成稠密向量dense、稀疏向量sparse
         embeddings = get_bge_m3_embedding([merged_query])
         # 读取配置中存储文档块的Milvus集合名称
-        collection_name = MilvusConfig.chunks_collection
+        collection_name = get_chunks_collection()
 
         # 5. 转义item_names内部特殊字符，防止构建Milvus表达式时出现引号语法报错
         # item_names = [item.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
@@ -81,6 +81,10 @@ class NodeSearchEmbeddingHyde(NodeBase):
         #               ]
         # 构造Milvus标量过滤表达式：限定只检索指定item_name范围内的数据
         expr = f"item_name in {json.dumps(item_names,ensure_ascii=False)}"  # Milvus要求in后紧跟JSON数组字符串
+        # 附加内容类型过滤（景点介绍/线路推荐/酒店信息/美食推荐/交通指南等）
+        content_types = state.get("content_types") or []
+        if content_types:
+            expr += f" and content_type in {json.dumps(content_types, ensure_ascii=False)}"
 
         # 6. 组装混合检索请求参数：稠密向量、稀疏向量、对应索引字段、召回条数、过滤条件
         reqs = create_reqs(
@@ -97,7 +101,7 @@ class NodeSearchEmbeddingHyde(NodeBase):
             reqs=reqs,
             ranker=(0.8, 0.2),
             limit=10,
-            output_fields=["id", "file_title", "title", "content", "item_name"]
+            output_fields=["id", "file_title", "title", "content", "item_name", "region", "content_type", "doc_name", "topics", "source_url"]
         )
 
         # 7. 格式化Milvus返回结果，统一结构：把entity字段展开，增加相似度score与数据源标记

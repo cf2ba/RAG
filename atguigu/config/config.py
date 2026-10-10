@@ -16,7 +16,8 @@ class MineruToken:
     mineru_token = os.getenv('MINERU_TOKEN')
 class LLMConfig:
     openai_api_key = os.getenv('OPENAI_API_KEY')
-    openai_base_url = os.getenv('OPENAI_BASE_URL')
+    # 兼容两种命名：.env 里写成 OPENAI_BASE_URL 或 OPENAI_API_BASE 都能读到
+    openai_base_url = os.getenv('OPENAI_BASE_URL') or os.getenv('OPENAI_API_BASE')
     llm_default_model = os.getenv('LLM_DEFAULT_MODEL')
     # 默认温度参数（0-1，越低越稳定）
     llm_default_temperature = float(os.getenv('LLM_DEFAULT_TEMPERATURE'))
@@ -43,17 +44,27 @@ class EmbeddingConfig:
     # BGE-M3 模型本地路径（根据下载模型的成功提示来设置）
     bge_m3_path = os.getenv("BGE_M3_PATH")
     # bge-m3 模型名称
-    bge_m3 = os.getenv("BGE_M3 ")
+    bge_m3 = os.getenv("BGE_M3")
     # 嵌入模型运行设备，cuda:0表示使用第1块gpu，cpu表示使用cpu，cuda:n表示第n+1块gpu
     bge_device = os.getenv("BGE_DEVICE")
     # 是否使用半精度（true/false）1=开启（gpu加速更高效），0=关闭（兼容低版本gpu/cpu）
-    bge_fp16 =True if os.getenv("BGE_FP16 ") in("True",1,True,"1") else False
+    # 注意：fp16 仅在 CUDA 设备上生效，CPU 上强制关闭，否则模型加载/推理会卡死或报错
+    bge_fp16 = (
+        os.getenv("BGE_FP16") in ("True", 1, True, "1")
+        and (os.getenv("BGE_DEVICE") or "").lower().startswith("cuda")
+    )
 class MilvusConfig:
     milvus_url = os.getenv("MILVUS_URL")
-    # 知识库切片集合名
+    # 知识库切片集合名（商品/默认）
     chunks_collection = os.getenv("CHUNKS_COLLECTION")
-    # 商品名称集合名
+    # 商品名称集合名（商品/默认）
     item_name_collection = os.getenv("ITEM_NAME_COLLECTION")
+    # 旅游知识库切片集合名
+    travel_chunks_collection = os.getenv("TRAVEL_CHUNKS_COLLECTION")
+    # 旅游知识库主体名称集合名
+    travel_item_name_collection = os.getenv("TRAVEL_ITEM_NAME_COLLECTION")
+    # 是否启用旅游集合（true/false），启用后导入与查询走旅游集合
+    use_travel_collection = os.getenv("USE_TRAVEL_COLLECTION") in ("true", "True", "1", "TRUE", "yes")
 class MongoConfig:
     # ====================
     # Document Database (MongoDB)

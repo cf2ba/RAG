@@ -68,8 +68,11 @@ class NodeRerank(NodeBase):
         merge_docs = rrf_chunks + web_search_docs
 
         # 字段格式统一：适配两路数据的不同字段名，输出标准化结构
+        # 【透传】保留原始字段（file_title/region/doc_name/content_type/topics 等），
+        # 仅补充/覆盖 title/content/url/source，供下游生成引用来源使用
         merge_docs = [
             {
+                **doc,
                 # 标题优先取本地文档的item_name，不存在则取网页文档的title
                 "title": doc.get("item_name", doc.get("title")),
                 # 文档正文内容，缺省为空字符串
@@ -96,7 +99,13 @@ class NodeRerank(NodeBase):
         """
         # 从状态中获取查询改写模块输出的优化后查询语句
         rewritten_query = state.get("rewritten_query")
-
+        # 提取所有文档的正文内容，组成文本列表批量送入重排模型。
+        # 注意：dashscope 重排接口要求 documents 中不能出现空串，否则返回 400。
+        # 这里先过滤掉 content 为空/纯空白的文档，避免整个请求失败。
+        merge_docs = [doc for doc in merge_docs if (doc.get("content") or "").strip()]
+        if not merge_docs:
+            logger.warning("所有召回文档 content 均为空，跳过重排序")
+            return []
         # 提取所有文档的正文内容，组成文本列表批量送入重排模型
         texts = [doc.get("content") for doc in merge_docs]
 
@@ -134,7 +143,7 @@ class NodeRerank(NodeBase):
         :param rerank_merge_docs: list[dict[str, Any]] 按重排分数降序排列的文档列表
         :return: list[dict[str, Any]] 断崖截断后的高质量文档列表
         """
-        # ========== 算法超参数定义 ==========
+        # ========== 算法超参数定义 ==========  四个固定常量和两个动态变量
         # 最大保留文档数：硬上限，控制上下文长度，避免Token溢出
         RERANK_MAX_TOPK: int = 10
         # 最小保留文档数：硬下限，确保回答有足够信息支撑
@@ -142,7 +151,7 @@ class NodeRerank(NodeBase):
         # 相对断崖阈值：相邻文档分数的相对跌幅比例，超过则判定为断崖
         RERANK_GAP_RATIO: float = 0.35
         # 绝对断崖阈值：相邻文档分数的绝对差值，超过则判定为断崖
-        RERANK_GAP_ABS: float = 0.25
+        RERANK_GAP_ABS: float = 0.5
 
         # 根据实际文档总数动态调整本次的最大、最小保留数，防止数组越界
         use_max_topk = min(RERANK_MAX_TOPK, len(rerank_merge_docs))

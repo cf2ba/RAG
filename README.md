@@ -760,7 +760,7 @@ sudo systemctl restart ntpd
 
 
 
-* 本项目核心架构与实现参照**尚硅谷《大模型技术之 LLM》系列课程・06 掌柜智库项目**（14 天实战课程，涵盖：环境准备 / Docker 中间件 / LangGraph 骨架 / PDF 解析 / 图片处理 / 文档切分 / 嵌入模型 / Milvus / 主体识别 / MCP 检索 / HyDE / RRF / Rerank / FastAPI / SSE / 前端集成 / 面试指南）
+* 本项目核心架构与实现（涵盖：环境准备 / Docker 中间件 / LangGraph 骨架 / PDF 解析 / 图片处理 / 文档切分 / 嵌入模型 / Milvus / 主体识别 / MCP 检索 / HyDE / RRF / Rerank / FastAPI / SSE / 前端集成 ）
 
 * 核心技术依赖：LangGraph、Milvus、MinIO、MongoDB、FlagEmbedding（BGE-M3）、阿里云百炼 DashScope、OpenAI Agents SDK（MCP）
 
